@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationIcon>..\..\assets\x-disk-inspector.ico</ApplicationIcon>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XDiskInspector.Core\XDiskInspector.Core.csproj" />
+    <ProjectReference Include="..\XDiskInspector.Rules\XDiskInspector.Rules.csproj" />
+    <ProjectReference Include="..\XDiskInspector.Cleanup\XDiskInspector.Cleanup.csproj" />
+    <ProjectReference Include="..\XDiskInspector.Reporting\XDiskInspector.Reporting.csproj" />
+  </ItemGroup>
+  <ItemGroup><Resource Include="..\..\assets\x-disk-inspector.ico" Link="Assets\x-disk-inspector.ico" /></ItemGroup>
+</Project>
