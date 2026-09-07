@@ -109,6 +109,7 @@ public sealed class MainViewModel : ObservableObject
         {
             if (!SetProperty(ref _currentReport, value)) return;
             Raise(nameof(IsCurrentReportRuleVersion));
+            Raise(nameof(IsPersistedReport));
             Raise(nameof(ScanCompletenessText));
             Raise(nameof(CanExecuteCleanup));
             RaiseCommandStates();
@@ -120,7 +121,8 @@ public sealed class MainViewModel : ObservableObject
     public bool IsCleanupRunning { get => _isCleanupRunning; private set { if (SetProperty(ref _isCleanupRunning, value)) { Raise(nameof(IsSelectionEditable)); RaiseCommandStates(); } } }
     public bool IsSelectionEditable => !IsCleanupRunning && !IsScanning;
     public bool IsCurrentReportRuleVersion => CurrentReport is not null && string.Equals(CurrentReport.RuleVersion, _matcher.RuleVersion, StringComparison.Ordinal);
-    public bool CanExecuteCleanup => CurrentReport?.IsComplete == true && IsCurrentReportRuleVersion && SelectedCount > 0 && !IsScanning && !IsCleanupRunning;
+    public bool IsPersistedReport => ScanReportRuntimeState.IsPersisted(CurrentReport);
+    public bool CanExecuteCleanup => CurrentReport?.IsComplete == true && IsCurrentReportRuleVersion && !IsPersistedReport && SelectedCount > 0 && !IsScanning && !IsCleanupRunning;
     public string ScanStatus { get => _scanStatus; private set => SetProperty(ref _scanStatus, value); }
     public string CurrentPath { get => _currentPath; private set => SetProperty(ref _currentPath, value); }
     public string FileCountText { get => _fileCountText; private set => SetProperty(ref _fileCountText, value); }
@@ -138,9 +140,11 @@ public sealed class MainViewModel : ObservableObject
         ? "尚无报告"
         : !CurrentReport.IsComplete
             ? "不完整报告，已禁用批量清理"
-            : !IsCurrentReportRuleVersion
-                ? $"报告规则版本 {CurrentReport.RuleVersion} 已过期；当前规则 {_matcher.RuleVersion}，请重新扫描"
-                : "完整报告，可进行安全清理";
+            : IsPersistedReport
+                ? "历史报告仅供查看；要执行清理请重新扫描当前机器"
+                : !IsCurrentReportRuleVersion
+                    ? $"报告规则版本 {CurrentReport.RuleVersion} 已过期；当前规则 {_matcher.RuleVersion}，请重新扫描"
+                    : "完整报告，可进行安全清理";
 
     public double LargeFileThresholdMb { get => _largeFileThresholdMb; set { if (SetProperty(ref _largeFileThresholdMb, Math.Clamp(value, 1, 1024 * 1024))) LargeFileView.Refresh(); } }
     public double MinimumSizeMb { get => _minimumSizeMb; set { if (SetProperty(ref _minimumSizeMb, Math.Max(0, value))) RefreshFilters(); } }
@@ -187,10 +191,10 @@ public sealed class MainViewModel : ObservableObject
             var report = await _jsonWriter.ReadAsync(LastReportPath);
             ApplyReport(report);
             ScanStatus = !report.IsComplete
-                ? "已载入上次不完整报告（批量清理已禁用）"
-                : IsCurrentReportRuleVersion
-                    ? "已载入上次完整报告"
-                    : "已载入旧规则版本报告（请重新扫描后再清理）";
+                ? "已载入上次不完整报告（仅供查看）"
+                : !IsCurrentReportRuleVersion
+                    ? "已载入旧规则版本历史报告（仅供查看，请重新扫描）"
+                    : "已载入历史报告（仅供查看；清理前必须重新扫描当前机器）";
             SelectedPageIndex = 1;
         }
         catch (Exception ex) { MessageBox.Show($"无法载入上次报告：{ex.Message}", "载入上次报告", MessageBoxButton.OK, MessageBoxImage.Warning); }
