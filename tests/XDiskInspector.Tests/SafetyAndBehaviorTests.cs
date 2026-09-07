@@ -209,7 +209,6 @@ public sealed class SafetyAndBehaviorTests
         var matcher = CreateFixtureMatcher(root.FullName, minAgeDays: null);
         using var cts = new CancellationTokenSource();
         var recycle = new CancellingRecycleBinService(cts);
-        var executor = new CleanupExecutor(matcher, new SafePathPolicy(), recycle);
 
         var recycleRule = new DirectoryRule
         {
@@ -218,7 +217,7 @@ public sealed class SafetyAndBehaviorTests
             CleanupKind = CleanupKind.RecycleBin, AppliesToDescendants = true, Irreversible = true
         };
         matcher = new PathRuleMatcher(new RuleLibrary("test-stop", [recycleRule]));
-        executor = new CleanupExecutor(matcher, new SafePathPolicy(), recycle);
+        var executor = new CleanupExecutor(matcher, new SafePathPolicy(), recycle);
         var preview = new CleanupPreview
         {
             RuleVersion = matcher.RuleVersion,
@@ -234,6 +233,7 @@ public sealed class SafetyAndBehaviorTests
         Assert.True(result.Stopped);
         Assert.Single(result.Items);
         Assert.Equal(1, recycle.CallCount);
+        Assert.True(string.Equals(Path.GetPathRoot(root.FullName), recycle.LastRootPath, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -350,15 +350,19 @@ public sealed class SafetyAndBehaviorTests
 
     private sealed class FakeRecycleBinService : IRecycleBinService
     {
-        public Task<(bool Success, string? Error)> EmptyAsync() => Task.FromResult<(bool, string?)>((true, null));
+        public Task<(bool Success, string? Error)> EmptyAsync(string rootPath)
+            => Task.FromResult<(bool, string?)>((true, null));
     }
 
     private sealed class CancellingRecycleBinService(CancellationTokenSource cts) : IRecycleBinService
     {
         public int CallCount { get; private set; }
-        public Task<(bool Success, string? Error)> EmptyAsync()
+        public string? LastRootPath { get; private set; }
+
+        public Task<(bool Success, string? Error)> EmptyAsync(string rootPath)
         {
             CallCount++;
+            LastRootPath = rootPath;
             cts.Cancel();
             return Task.FromResult<(bool, string?)>((true, null));
         }
