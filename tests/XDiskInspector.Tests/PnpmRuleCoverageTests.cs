@@ -54,6 +54,9 @@ public sealed class PnpmRuleCoverageTests
             RiskLevel = RiskLevel.Medium
         };
 
-        Assert.False(SelectionPolicy.IsSuggestedSafeCandidate(item));
+        var selectedCount = SelectionPolicy.SelectSuggested([item]);
+
+        Assert.Equal(0, selectedCount);
+        Assert.False(item.Selected);
     }
 }
