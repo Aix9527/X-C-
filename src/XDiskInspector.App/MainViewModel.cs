@@ -110,16 +110,38 @@ public sealed class MainViewModel : ObservableObject
             if (!SetProperty(ref _currentReport, value)) return;
             Raise(nameof(IsCurrentReportRuleVersion));
             Raise(nameof(IsPersistedReport));
+            Raise(nameof(IsSelectionEditable));
             Raise(nameof(ScanCompletenessText));
             Raise(nameof(CanExecuteCleanup));
             RaiseCommandStates();
         }
     }
     public int SelectedPageIndex { get => _selectedPageIndex; set => SetProperty(ref _selectedPageIndex, value); }
-    public bool IsScanning { get => _isScanning; private set { if (SetProperty(ref _isScanning, value)) { Raise(nameof(IsNotScanning)); RaiseCommandStates(); } } }
+    public bool IsScanning
+    {
+        get => _isScanning;
+        private set
+        {
+            if (!SetProperty(ref _isScanning, value)) return;
+            Raise(nameof(IsNotScanning));
+            Raise(nameof(IsSelectionEditable));
+            Raise(nameof(CanExecuteCleanup));
+            RaiseCommandStates();
+        }
+    }
     public bool IsNotScanning => !IsScanning;
-    public bool IsCleanupRunning { get => _isCleanupRunning; private set { if (SetProperty(ref _isCleanupRunning, value)) { Raise(nameof(IsSelectionEditable)); RaiseCommandStates(); } } }
-    public bool IsSelectionEditable => !IsCleanupRunning && !IsScanning;
+    public bool IsCleanupRunning
+    {
+        get => _isCleanupRunning;
+        private set
+        {
+            if (!SetProperty(ref _isCleanupRunning, value)) return;
+            Raise(nameof(IsSelectionEditable));
+            Raise(nameof(CanExecuteCleanup));
+            RaiseCommandStates();
+        }
+    }
+    public bool IsSelectionEditable => !IsCleanupRunning && !IsScanning && !IsPersistedReport;
     public bool IsCurrentReportRuleVersion => CurrentReport is not null && string.Equals(CurrentReport.RuleVersion, _matcher.RuleVersion, StringComparison.Ordinal);
     public bool IsPersistedReport => ScanReportRuntimeState.IsPersisted(CurrentReport);
     public bool CanExecuteCleanup => CurrentReport?.IsComplete == true && IsCurrentReportRuleVersion && !IsPersistedReport && SelectedCount > 0 && !IsScanning && !IsCleanupRunning;
