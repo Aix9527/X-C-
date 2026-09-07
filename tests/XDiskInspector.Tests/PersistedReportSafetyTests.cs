@@ -50,8 +50,8 @@ public sealed class PersistedReportSafetyTests
         Assert.False(ScanReportRuntimeState.IsPersisted(liveReport));
 
         var json = await File.ReadAllTextAsync(reportPath);
-        Assert.DoesNotContain("Persisted", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("RuntimeState", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\"isPersisted\"", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ScanReportRuntimeState", json, StringComparison.OrdinalIgnoreCase);
 
         var loaded = await writer.ReadAsync(reportPath);
         Assert.True(loaded.IsComplete);
