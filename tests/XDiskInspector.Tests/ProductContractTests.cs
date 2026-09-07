@@ -47,8 +47,9 @@ public sealed class ProductContractTests
         [
             "windows.pagefile", "windows.recycle-bin", "windows.local-temp", "windows.crash-dumps",
             "wsl.ext4-vhdx", "docker.data", "omnivoice.hf-cache", "omnivoice.venv",
-            "jianying.data", "trae.data", "tencent.data", "bun.cache", "npm.cache", "pnpm.cache",
-            "user.generic-cache", "windows.winsxs", "windows.installer", "nvidia.ota-artifacts"
+            "jianying.data", "trae.data", "tencent.data", "bun.install-cache", "bun.root",
+            "npm.cache", "pnpm.store", "pnpm.cache", "user.generic-cache",
+            "windows.winsxs", "windows.installer", "nvidia.ota-artifacts"
         ];
 
         Assert.All(required, id => Assert.Contains(id, ids));
@@ -64,5 +65,4 @@ public sealed class ProductContractTests
             Recommendation = recommendation,
             RiskLevel = risk
         };
-
 }
