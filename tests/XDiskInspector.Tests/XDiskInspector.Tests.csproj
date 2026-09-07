@@ -11,6 +11,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5"><PrivateAssets>all</PrivateAssets><IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets></PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <!-- App reference is intentional: tests lock UI-layer bulk collection behavior without invoking WPF windows. -->
     <ProjectReference Include="..\..\src\XDiskInspector.App\XDiskInspector.App.csproj" />
     <ProjectReference Include="..\..\src\XDiskInspector.Core\XDiskInspector.Core.csproj" />
     <ProjectReference Include="..\..\src\XDiskInspector.Rules\XDiskInspector.Rules.csproj" />
