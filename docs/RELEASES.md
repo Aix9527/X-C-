@@ -34,7 +34,7 @@
 
 ## 已发布版本总览
 
-截至 2026-09-08，Releases 页面共 5 个版本，每个都包含 EXE、ZIP、SHA256 三个资产，全部由 self-hosted Windows Runner（`aix-runner`）真机构建，并通过 `verify-win.ps1` 验证门后才发布：
+截至 2026-09-08，Releases 页面共 7 个版本，每个都包含 EXE、ZIP、SHA256 三个资产，全部由 self-hosted Windows Runner（`aix-runner`）或真机手动门禁构建，并通过 `verify-win.ps1` 验证门后才发布：
 
 | Tag | 类型 | Source commit | 说明 |
 |---|---|---|---|
@@ -43,6 +43,8 @@
 | `v1.0.0-pr2-e5c01c` | 预发布 | `e5c01cac9e28030487cc6f67aa282f3ea821f05b` | PR #2 已验证 head 之一，补发构建成功 |
 | `v1.0.0-pr2-bd248d7` | 预发布 | `bd248d71cac422867999904fc75ba53d27a66ffb` | PR #2 已验证 head 之一，补发构建成功 |
 | `v1.0.0-pr2-f510b05-hotfix1` | 预发布 | `b22e0c394ef6b782953470c238ad22fe493211d2` | f510b05 功能线的修复版（见下文"不发布说明"） |
+| `v1.0.0-pr2-f510b05-hotfix2` | 预发布 | `ed4943535b705e40a84c140ad00525dc0b4eb681` | 修复 WPF 启动崩溃（ProgressBar TwoWay 绑定改 OneWay，PR #10）；verify-win.ps1 增加 EXE 启动冒烟测试 |
+| `v1.0.0-pr2-f510b05-hotfix3` | 预发布 | `b68049417b72f9c7240c7ccb9346e42e30e14a6b` | 修复 UAC 请求通道（PR #11）：Elevation 存储迁移至 ProgramData + ACL 初始化 + request 落盘校验 + worker 分类错误码 + elevation.log；Issue #3 Windows 真机验收通过（62/62 tests PASS） |
 
 ## 原始 v1.0.0-pr2-f510b05：不发布说明
 
@@ -70,8 +72,10 @@
 
 ## 当前 main
 
-- 历史版本补发批次（上述 5 个版本）已全部完成。
-- 管理员清理 / 删除进度 / 10GB+ 大文件响应性等真机行为验收仍由 Issue #3 作为专项 Windows 真机验收门跟踪。
+- 历史版本补发批次已全部完成；hotfix3（UAC 请求通道修复，PR #11）已通过 Windows 真机验收并发布。
+- Issue #3（Windows 真机专项验收：管理员清理、删除进度与 10GB+ 大文件响应性）已于 2026-09-08 关闭：UAC 成功路径（成功 9 / 释放 10.09 GB，elevation.log 全链路）、UAC 取消路径（失败保留、无提权、窗口可用）、10GB+ 大文件删除响应性、62/62 tests PASS 全部达成。
+- 体验优化项（删除成功后候选列表自动刷新）由 Issue #12 跟踪，不阻塞 v1.0.1。
+- 下一版本 `v1.0.1` Stable 发布进行中（Tag + Release 由发布流程生成）。
 - 发布自动化基于 self-hosted Runner（Windows 真机计划任务 `GitHubActionsRunner`）执行；其安装与维护见 `docs/SELF_HOSTED_RUNNER.md`。
 
 ## 版本发布原则
