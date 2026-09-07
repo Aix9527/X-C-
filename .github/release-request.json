@@ -1,7 +1,7 @@
 {
-  "tag": "v1.0.0-pr2-f510b05-hotfix2",
-  "target_ref": "ed4943535b705e40a84c140ad00525dc0b4eb681",
+  "tag": "v1.0.0-pr2-f510b05-hotfix3",
+  "target_ref": "e4bf3d4e6c6e5457f452d967e852e4c0ba65827f",
   "prerelease": true,
-  "attempt": 2,
-  "reason": "Publish f510b05 feature line after fixing the TwoWay binding startup crash caught by real-machine GUI acceptance (PR #10, encoding re-commit)."
+  "attempt": 1,
+  "reason": "Publish UAC request-channel hotfix (PR #11): move elevation storage to ProgramData with explicit ACL, flush-and-verify request file before runas, explicit worker read error codes, elevation log."
 }
