@@ -20,13 +20,13 @@ public sealed class SafePathPolicy
         var exactRoots = new List<string>();
         AddIfPresent(exactRoots, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         AddIfPresent(exactRoots, Environment.GetFolderPath(Environment.SpecialFolder.Windows));
-        AddIfPresent(exactRoots, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
-        AddIfPresent(exactRoots, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86));
 
         var trees = new List<string>();
         AddIfPresent(trees, Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
         AddIfPresent(trees, Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
         AddIfPresent(trees, Environment.GetFolderPath(Environment.SpecialFolder.MyVideos));
+        AddIfPresent(trees, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
+        AddIfPresent(trees, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86));
 
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (!string.IsNullOrWhiteSpace(profile)) AddIfPresent(trees, Path.Combine(profile, "Downloads"));
@@ -56,7 +56,7 @@ public sealed class SafePathPolicy
 
         foreach (var forbidden in _forbiddenTrees)
         {
-            if (IsSameOrDescendant(full, forbidden)) return PathSafetyResult.Blocked("受保护个人或自定义目录及其子路径禁止自动清理", full);
+            if (IsSameOrDescendant(full, forbidden)) return PathSafetyResult.Blocked("受保护个人、程序安装或自定义目录及其子路径禁止自动清理", full);
         }
 
         var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
@@ -403,9 +403,14 @@ public sealed class CleanupExecutor
             if (attributes.HasFlag(FileAttributes.ReparsePoint))
                 return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, "文件已变为重解析点。");
 
-            var currentLastWrite = File.GetLastWriteTimeUtc(candidate.Path);
+            var currentInfo = new FileInfo(candidate.Path);
+            var currentLastWrite = currentInfo.LastWriteTimeUtc;
             if (candidate.ScannedLastWriteTimeUtc.HasValue && Math.Abs((currentLastWrite - candidate.ScannedLastWriteTimeUtc.Value).TotalSeconds) > 2)
                 return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, "文件在扫描后发生变化。");
+
+            var currentLength = currentInfo.Length;
+            if (currentLength != candidate.EstimatedSizeBytes)
+                return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, "文件大小在扫描后发生变化，已跳过。");
 
             if (classification.MinAgeDays.HasValue && currentLastWrite > DateTime.UtcNow.AddDays(-classification.MinAgeDays.Value))
                 return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, $"文件未达到 {classification.MinAgeDays.Value} 天最小保留时间。");
@@ -415,9 +420,17 @@ public sealed class CleanupExecutor
                 !string.Equals(finalSafety.NormalizedPath, safety.NormalizedPath, StringComparison.OrdinalIgnoreCase))
                 return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, finalSafety.Reason ?? "删除前最终路径安全复核失败。");
 
-            var before = new FileInfo(candidate.Path).Length;
+            var fileRoot = Path.GetPathRoot(finalSafety.NormalizedPath);
+            var beforeFree = string.IsNullOrWhiteSpace(fileRoot) ? null : TryGetAvailableFreeSpace(fileRoot);
             File.Delete(candidate.Path);
-            return new CleanupItemResult(candidate.Path, CleanupItemStatus.Deleted, before, "已删除。");
+            var afterFree = string.IsNullOrWhiteSpace(fileRoot) ? null : TryGetAvailableFreeSpace(fileRoot);
+            var measuredFreed = beforeFree.HasValue && afterFree.HasValue
+                ? Math.Max(0, afterFree.Value - beforeFree.Value)
+                : 0;
+            var message = measuredFreed > 0
+                ? $"已删除，并检测到实际释放 {measuredFreed} 字节。"
+                : $"已删除；删除前逻辑大小为 {currentLength} 字节，但系统未立即报告可测的可用空间变化。";
+            return new CleanupItemResult(candidate.Path, CleanupItemStatus.Deleted, measuredFreed, message);
         }
         catch (UnauthorizedAccessException ex)
         {
