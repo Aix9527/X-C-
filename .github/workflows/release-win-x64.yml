@@ -1,0 +1,178 @@
+name: Release Windows x64
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v1.0.0 or v1.0.0-pr2-2f39853"
+        required: true
+        type: string
+      target_ref:
+        description: "Commit, tag, or branch to build"
+        required: true
+        default: "main"
+        type: string
+      prerelease:
+        description: "Mark as prerelease"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  verify-build-release:
+    name: Verify, build and publish Release
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      TARGET_REF: ${{ github.event_name == 'push' && github.ref || inputs.target_ref }}
+      PRERELEASE: ${{ github.event_name == 'push' && contains(github.ref_name, '-') || inputs.prerelease }}
+
+    steps:
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_REF }}
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Verify source and publish single-file EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\verify-win.ps1 -OutputDirectory "$env:GITHUB_WORKSPACE\artifacts\release\publish"
+
+      - name: Package release assets
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TAG)) { throw 'RELEASE_TAG is empty.' }
+          if ([string]::IsNullOrWhiteSpace($env:TARGET_REF)) { throw 'TARGET_REF is empty.' }
+
+          $publish = Join-Path $env:GITHUB_WORKSPACE 'artifacts\release\publish'
+          $out = Join-Path $env:GITHUB_WORKSPACE 'artifacts\release\assets'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+
+          $sourceExe = Join-Path $publish 'XDiskInspector.App.exe'
+          if (-not (Test-Path $sourceExe)) { throw "Published EXE not found: $sourceExe" }
+
+          $safeTag = $env:RELEASE_TAG -replace '[^0-9A-Za-z._-]', '-'
+          $exeName = "X-C盘巡检官-$safeTag-win-x64.exe"
+          $zipName = "X-C盘巡检官-$safeTag-win-x64.zip"
+          $shaName = "X-C盘巡检官-$safeTag-SHA256.txt"
+
+          $exePath = Join-Path $out $exeName
+          $zipPath = Join-Path $out $zipName
+          $shaPath = Join-Path $out $shaName
+          Copy-Item $sourceExe $exePath -Force
+          Compress-Archive -Path $exePath -DestinationPath $zipPath -CompressionLevel Optimal -Force
+
+          $exeHash = (Get-FileHash -Algorithm SHA256 $exePath).Hash
+          $zipHash = (Get-FileHash -Algorithm SHA256 $zipPath).Hash
+          @(
+            "$exeHash  $exeName",
+            "$zipHash  $zipName"
+          ) | Set-Content -Path $shaPath -Encoding utf8
+
+          $commit = (git rev-parse HEAD).Trim()
+          $exeSize = (Get-Item $exePath).Length
+          $zipSize = (Get-Item $zipPath).Length
+
+          $notes = @"
+          ## X C盘巡检官 $($env:RELEASE_TAG)
+
+          - Target ref: $($env:TARGET_REF)
+          - Source commit: $commit
+          - Platform: Windows x64
+          - Runtime: .NET 10 self-contained
+          - Package: single-file EXE + ZIP + SHA256
+          - EXE size: $exeSize bytes
+          - ZIP size: $zipSize bytes
+
+          ### Verification
+
+          This Release is created only after scripts/verify-win.ps1 succeeds against the same checked-out source.
+
+          ### SHA256
+
+          $exeHash  $exeName
+
+          $zipHash  $zipName
+          "@
+
+          $notesPath = Join-Path $out 'release-notes.md'
+          $notes | Set-Content -Path $notesPath -Encoding utf8
+
+          "asset_dir=$out" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "notes_path=$notesPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          Write-Host "Release tag: $env:RELEASE_TAG"
+          Write-Host "Target ref: $env:TARGET_REF"
+          Write-Host "Source commit: $commit"
+          Write-Host "EXE: $exeName ($exeSize bytes)"
+          Write-Host "EXE SHA256: $exeHash"
+          Write-Host "ZIP: $zipName ($zipSize bytes)"
+          Write-Host "ZIP SHA256: $zipHash"
+
+      - name: Create or update GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET_DIR: ${{ steps.package.outputs.asset_dir }}
+          NOTES_PATH: ${{ steps.package.outputs.notes_path }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+            throw 'GitHub CLI (gh) is not available on this runner.'
+          }
+
+          $assets = @(
+            Get-ChildItem $env:ASSET_DIR -File |
+              Where-Object { $_.Name -ne 'release-notes.md' } |
+              ForEach-Object { $_.FullName }
+          )
+          if ($assets.Count -lt 3) { throw "Expected EXE, ZIP and SHA256 assets, found $($assets.Count)." }
+
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $env:RELEASE_TAG already exists; updating notes and assets."
+            gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --title "X C盘巡检官 $env:RELEASE_TAG" --notes-file $env:NOTES_PATH
+            if ($LASTEXITCODE -ne 0) { throw 'gh release edit failed.' }
+            gh release upload $env:RELEASE_TAG @assets --repo $env:GITHUB_REPOSITORY --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'gh release upload failed.' }
+          }
+          else {
+            $args = @(
+              'release', 'create', $env:RELEASE_TAG,
+              '--repo', $env:GITHUB_REPOSITORY,
+              '--target', $env:TARGET_REF,
+              '--title', "X C盘巡检官 $env:RELEASE_TAG",
+              '--notes-file', $env:NOTES_PATH
+            )
+            if ($env:PRERELEASE -eq 'true') { $args += '--prerelease' }
+            $args += $assets
+            & gh @args
+            if ($LASTEXITCODE -ne 0) { throw 'gh release create failed.' }
+          }
+
+      - name: Upload workflow artifact copy
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ env.RELEASE_TAG }}-win-x64
+          path: artifacts/release/assets/*
+          if-no-files-found: error
+          retention-days: 30
