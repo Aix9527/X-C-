@@ -31,8 +31,8 @@ permissions:
 jobs:
   verify-build-release:
     name: Verify, build and publish Release
-    runs-on: windows-latest
-    timeout-minutes: 45
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
 
     steps:
       - name: Checkout control source
