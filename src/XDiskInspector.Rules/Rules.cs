@@ -26,7 +26,15 @@ public sealed class RuleLibrary
 {
     public string Version { get; }
     public IReadOnlyList<DirectoryRule> Rules { get; }
-    public RuleLibrary(string version, IEnumerable<DirectoryRule> rules) { Version = version; Rules = rules.ToArray(); }
+
+    public RuleLibrary(string version, IEnumerable<DirectoryRule> rules)
+    {
+        if (string.IsNullOrWhiteSpace(version)) throw new InvalidDataException("规则库版本不能为空。");
+        Version = version;
+        Rules = rules?.ToArray() ?? throw new ArgumentNullException(nameof(rules));
+        Validate(Rules);
+    }
+
     public static RuleLibrary LoadDefault()
     {
         var assembly = typeof(RuleLibrary).Assembly;
@@ -38,6 +46,22 @@ public sealed class RuleLibrary
         options.Converters.Add(new JsonStringEnumConverter());
         var rules = document.RootElement.GetProperty("rules").Deserialize<List<DirectoryRule>>(options) ?? [];
         return new RuleLibrary(version, rules);
+    }
+
+    private static void Validate(IReadOnlyList<DirectoryRule> rules)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var rule in rules)
+        {
+            if (string.IsNullOrWhiteSpace(rule.Id)) throw new InvalidDataException("规则 ID 不能为空。");
+            if (!ids.Add(rule.Id)) throw new InvalidDataException($"规则库存在重复 Rule ID：{rule.Id}");
+            if (string.IsNullOrWhiteSpace(rule.PathPattern)) throw new InvalidDataException($"规则 {rule.Id} 的路径模式为空。");
+            if (rule.MinAgeDays is < 0) throw new InvalidDataException($"规则 {rule.Id} 的最小保留天数不能为负数。");
+            if (rule.AllowCleanup && rule.CleanupKind == CleanupKind.None)
+                throw new InvalidDataException($"规则 {rule.Id} 允许清理，但 CleanupKind=None。");
+            if (!rule.AllowCleanup && rule.CleanupKind != CleanupKind.None)
+                throw new InvalidDataException($"规则 {rule.Id} 禁止清理，却配置了破坏性 CleanupKind={rule.CleanupKind}。");
+        }
     }
 }
 
