@@ -38,7 +38,7 @@ $solution = Join-Path $repo 'XDiskInspector.sln'
 $tests = Join-Path $repo 'tests\XDiskInspector.Tests\XDiskInspector.Tests.csproj'
 $app = Join-Path $repo 'src\XDiskInspector.App\XDiskInspector.App.csproj'
 
-Write-Host '=== X C盘巡检官 Windows verification ==='
+Write-Host '=== X C鐩樺贰妫€瀹?Windows verification ==='
 Write-Host "Repository: $repo"
 Write-Host "SDK: $($sdks -join '; ')"
 
@@ -75,7 +75,41 @@ if ($managedSidecars.Count -gt 0) {
     throw "Single-file verification found unexpected DLL/PDB sidecars: $($managedSidecars.Name -join ', ')"
 }
 
+
+# --- EXE startup smoke test: the app must launch and create its main window ---
+Write-Host ''
+Write-Host '=== EXE startup smoke test ==='
+$smokeProc = Start-Process -FilePath $exe[0].FullName -WorkingDirectory $out -PassThru
+$smokeOk = $false
+$smokeError = $null
+try {
+    $deadline = (Get-Date).AddSeconds(45)
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+        $alive = @(Get-Process -Name 'XDiskInspector.App' -ErrorAction SilentlyContinue)
+        if ($alive.Count -eq 0) {
+            $smokeProc.Refresh()
+            $smokeError = "EXE exited before creating a main window (exit code $($smokeProc.ExitCode))."
+            break
+        }
+        if (@($alive | Where-Object { $_.MainWindowHandle -ne 0 }).Count -gt 0) {
+            $smokeOk = $true
+            break
+        }
+    }
+    if (-not $smokeOk -and -not $smokeError) {
+        $smokeError = 'EXE did not create a main window within 45 seconds.'
+    }
+}
+finally {
+    Get-Process -Name 'XDiskInspector.App' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+if (-not $smokeOk) {
+    throw "EXE startup smoke test failed: $smokeError"
+}
+Write-Host 'EXE startup smoke test PASSED: main window created.'
 Write-Host ''
 Write-Host 'VERIFICATION PASSED'
 Write-Host "EXE: $($exe[0].FullName)"
 Write-Host "Size: $($exe[0].Length) bytes"
+
