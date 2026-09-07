@@ -131,7 +131,7 @@ public sealed class SafetyAndBehaviorTests
         File.WriteAllText(child, "unchanged");
         var matcher = CreateFixtureMatcher(parent.FullName, minAgeDays: null);
         var service = new CleanupPreviewService(matcher, new SafePathPolicy());
-        var parentItem = NewFixtureItem(parent.FullName, matcher, selectable: true, kind: ScanItemKind.Directory);
+        var parentItem = NewFixtureItem(parent.FullName, matcher, selectable: true, kind: ScanItemKind.File);
         var childItem = NewFixtureItem(child, matcher, selectable: true);
         parentItem.Selected = true;
         childItem.Selected = true;
