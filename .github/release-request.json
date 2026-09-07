@@ -1,7 +1,7 @@
 {
-  "tag": "v1.0.0-pr2-2f39853",
-  "target_ref": "2f39853b5aae741a482f01f0c3d1525b8d34b510",
-  "prerelease": true,
-  "attempt": 2,
-  "reason": "Retry backfill on the self-hosted Windows x64 runner after hosted runner allocation failed."
+  "tag": "v1.0.0",
+  "target_ref": "6c1f3cf60f5a1b46b65719447dead2a1dc359d63",
+  "prerelease": false,
+  "attempt": 1,
+  "reason": "Backfill the PR #1 final Windows-verified v1 release (45/45 PASS)."
 }
