@@ -102,13 +102,25 @@ public sealed class MainViewModel : ObservableObject
     public AsyncRelayCommand ExportHtmlCommand { get; }
     public RelayCommand RunOptimizationActionCommand { get; }
 
-    public ScanReport? CurrentReport { get => _currentReport; private set { if (SetProperty(ref _currentReport, value)) RaiseCommandStates(); } }
+    public ScanReport? CurrentReport
+    {
+        get => _currentReport;
+        private set
+        {
+            if (!SetProperty(ref _currentReport, value)) return;
+            Raise(nameof(IsCurrentReportRuleVersion));
+            Raise(nameof(ScanCompletenessText));
+            Raise(nameof(CanExecuteCleanup));
+            RaiseCommandStates();
+        }
+    }
     public int SelectedPageIndex { get => _selectedPageIndex; set => SetProperty(ref _selectedPageIndex, value); }
     public bool IsScanning { get => _isScanning; private set { if (SetProperty(ref _isScanning, value)) { Raise(nameof(IsNotScanning)); RaiseCommandStates(); } } }
     public bool IsNotScanning => !IsScanning;
     public bool IsCleanupRunning { get => _isCleanupRunning; private set { if (SetProperty(ref _isCleanupRunning, value)) { Raise(nameof(IsSelectionEditable)); RaiseCommandStates(); } } }
     public bool IsSelectionEditable => !IsCleanupRunning && !IsScanning;
-    public bool CanExecuteCleanup => CurrentReport?.IsComplete == true && SelectedCount > 0 && !IsScanning && !IsCleanupRunning;
+    public bool IsCurrentReportRuleVersion => CurrentReport is not null && string.Equals(CurrentReport.RuleVersion, _matcher.RuleVersion, StringComparison.Ordinal);
+    public bool CanExecuteCleanup => CurrentReport?.IsComplete == true && IsCurrentReportRuleVersion && SelectedCount > 0 && !IsScanning && !IsCleanupRunning;
     public string ScanStatus { get => _scanStatus; private set => SetProperty(ref _scanStatus, value); }
     public string CurrentPath { get => _currentPath; private set => SetProperty(ref _currentPath, value); }
     public string FileCountText { get => _fileCountText; private set => SetProperty(ref _fileCountText, value); }
@@ -122,7 +134,13 @@ public sealed class MainViewModel : ObservableObject
     public string DiskUsedPercentText => $"{DiskUsedPercent:0.0}%";
     public string AccessibleLogicalText => CurrentReport is null ? "—" : ByteFormatter.Format(CurrentReport.AccessibleLogicalBytes);
     public string RuleVersionText => _ruleLibrary.Version;
-    public string ScanCompletenessText => CurrentReport is null ? "尚无报告" : CurrentReport.IsComplete ? "完整报告，可进行安全清理" : "不完整报告，已禁用批量清理";
+    public string ScanCompletenessText => CurrentReport is null
+        ? "尚无报告"
+        : !CurrentReport.IsComplete
+            ? "不完整报告，已禁用批量清理"
+            : !IsCurrentReportRuleVersion
+                ? $"报告规则版本 {CurrentReport.RuleVersion} 已过期；当前规则 {_matcher.RuleVersion}，请重新扫描"
+                : "完整报告，可进行安全清理";
 
     public double LargeFileThresholdMb { get => _largeFileThresholdMb; set { if (SetProperty(ref _largeFileThresholdMb, Math.Clamp(value, 1, 1024 * 1024))) LargeFileView.Refresh(); } }
     public double MinimumSizeMb { get => _minimumSizeMb; set { if (SetProperty(ref _minimumSizeMb, Math.Max(0, value))) RefreshFilters(); } }
@@ -168,7 +186,11 @@ public sealed class MainViewModel : ObservableObject
             if (!File.Exists(LastReportPath)) { MessageBox.Show("还没有保存过扫描报告。请先执行一次扫描。", "载入上次报告", MessageBoxButton.OK, MessageBoxImage.Information); return; }
             var report = await _jsonWriter.ReadAsync(LastReportPath);
             ApplyReport(report);
-            ScanStatus = report.IsComplete ? "已载入上次完整报告" : "已载入上次不完整报告（批量清理已禁用）";
+            ScanStatus = !report.IsComplete
+                ? "已载入上次不完整报告（批量清理已禁用）"
+                : IsCurrentReportRuleVersion
+                    ? "已载入上次完整报告"
+                    : "已载入旧规则版本报告（请重新扫描后再清理）";
             SelectedPageIndex = 1;
         }
         catch (Exception ex) { MessageBox.Show($"无法载入上次报告：{ex.Message}", "载入上次报告", MessageBoxButton.OK, MessageBoxImage.Warning); }
