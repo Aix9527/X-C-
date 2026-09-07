@@ -45,8 +45,10 @@ public sealed class CleanupConfirmationWindow : Window
 
         var grid = new DataGrid { ItemsSource = preview.Candidates, Margin = new Thickness(0, 0, 0, 12), IsReadOnly = true, AutoGenerateColumns = false };
         grid.Columns.Add(new DataGridTextColumn { Header = "路径", Binding = new Binding(nameof(CleanupCandidate.Path)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        grid.Columns.Add(new DataGridTextColumn { Header = "风险", Binding = new Binding(nameof(CleanupCandidate.RiskLevel)), Width = 90 });
-        grid.Columns.Add(new DataGridTextColumn { Header = "预计大小", Binding = new Binding(nameof(CleanupCandidate.EstimatedSizeBytes)), Width = 120 });
+        grid.Columns.Add(new DataGridTextColumn { Header = "风险", Binding = new Binding(nameof(CleanupCandidate.RiskLevel)), Width = 72 });
+        grid.Columns.Add(new DataGridTextColumn { Header = "预计大小", Binding = new Binding(nameof(CleanupCandidate.EstimatedSizeBytes)), Width = 100 });
+        grid.Columns.Add(new DataGridTextColumn { Header = "删除后果", Binding = new Binding(nameof(CleanupCandidate.Consequence)), Width = 190 });
+        grid.Columns.Add(new DataGridCheckBoxColumn { Header = "不可恢复", Binding = new Binding(nameof(CleanupCandidate.Irreversible)), Width = 82, IsReadOnly = true });
         Grid.SetRow(grid, 2); root.Children.Add(grid);
 
         _irreversibleCheck = new CheckBox

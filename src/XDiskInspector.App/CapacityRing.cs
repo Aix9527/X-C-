@@ -40,7 +40,10 @@ public sealed class CapacityRing : FrameworkElement
         var pen = new Pen(cyan, 16) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
         var sweep = IsScanning ? 68d : Math.Clamp(Value, 0, 100) * 3.6;
         var start = IsScanning ? _scanAngle : -90d;
-        if (sweep > 0.1) dc.DrawGeometry(null, pen, CreateArc(center, radius, start, sweep));
+        if (!IsScanning && sweep >= 359.9)
+            dc.DrawEllipse(null, pen, center, radius, radius);
+        else if (sweep > 0.1)
+            dc.DrawGeometry(null, pen, CreateArc(center, radius, start, sweep));
 
         if (IsScanning)
         {
