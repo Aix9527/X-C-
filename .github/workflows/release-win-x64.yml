@@ -2,8 +2,12 @@ name: Release Windows x64
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+    paths:
+      - '.github/release-request.json'
   workflow_dispatch:
     inputs:
       tag:
@@ -29,12 +33,64 @@ jobs:
     name: Verify, build and publish Release
     runs-on: windows-latest
     timeout-minutes: 45
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
-      TARGET_REF: ${{ github.event_name == 'push' && github.ref || inputs.target_ref }}
-      PRERELEASE: ${{ github.event_name == 'push' && contains(github.ref_name, '-') || inputs.prerelease }}
 
     steps:
+      - name: Checkout control source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Resolve release request
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          FULL_REF: ${{ github.ref }}
+          MANUAL_TAG: ${{ inputs.tag }}
+          MANUAL_TARGET_REF: ${{ inputs.target_ref }}
+          MANUAL_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          $tag = $null
+          $targetRef = $null
+          $prerelease = $false
+
+          if ($env:EVENT_NAME -eq 'workflow_dispatch') {
+            $tag = $env:MANUAL_TAG
+            $targetRef = $env:MANUAL_TARGET_REF
+            $prerelease = [System.Convert]::ToBoolean($env:MANUAL_PRERELEASE)
+          }
+          elseif ($env:FULL_REF -like 'refs/tags/v*') {
+            $tag = $env:REF_NAME
+            $targetRef = $env:FULL_REF
+            $prerelease = $tag.Contains('-')
+          }
+          else {
+            $requestPath = Join-Path $env:GITHUB_WORKSPACE '.github\release-request.json'
+            if (-not (Test-Path $requestPath)) {
+              throw "Release request file not found: $requestPath"
+            }
+            $request = Get-Content $requestPath -Raw | ConvertFrom-Json
+            $tag = [string]$request.tag
+            $targetRef = [string]$request.target_ref
+            $prerelease = [bool]$request.prerelease
+          }
+
+          if ([string]::IsNullOrWhiteSpace($tag)) { throw 'Resolved release tag is empty.' }
+          if (-not $tag.StartsWith('v')) { throw "Release tag must start with v: $tag" }
+          if ([string]::IsNullOrWhiteSpace($targetRef)) { throw 'Resolved target ref is empty.' }
+
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TARGET_REF=$targetRef" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PRERELEASE=$($prerelease.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          Write-Host "Release tag: $tag"
+          Write-Host "Target ref: $targetRef"
+          Write-Host "Prerelease: $prerelease"
+
       - name: Checkout target
         uses: actions/checkout@v4
         with:
@@ -119,8 +175,6 @@ jobs:
           "asset_dir=$out" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "notes_path=$notesPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-          Write-Host "Release tag: $env:RELEASE_TAG"
-          Write-Host "Target ref: $env:TARGET_REF"
           Write-Host "Source commit: $commit"
           Write-Host "EXE: $exeName ($exeSize bytes)"
           Write-Host "EXE SHA256: $exeHash"
