@@ -53,7 +53,12 @@ dotnet build .\src\XDiskInspector.App\XDiskInspector.App.csproj -c Release
 
 ## GitHub Actions
 
-`.github/workflows/windows-ci.yml` 会执行 restore → tests → WPF Release build → single-file publish → EXE 校验 → artifact upload。除 push / pull request 外也支持在 Actions 页面使用 `workflow_dispatch` 手工运行。
+项目现在提供两条 Windows 验收路径：
+
+- `.github/workflows/self-hosted-windows-ci.yml`：**推荐**。使用你自己的 Windows x64 机器作为 self-hosted runner，仅支持手动 `workflow_dispatch`，执行完整测试、Release build、single-file publish 和 Artifact 上传。
+- `.github/workflows/windows-ci.yml`：GitHub-hosted `windows-latest` 备用路径。当前也改为仅手动触发，避免私人仓库 hosted runner 额度/计费问题持续造成 PR 红灯。
+
+Self-hosted Runner 的完整注册和验收步骤见 [`docs/SELF_HOSTED_RUNNER.md`](docs/SELF_HOSTED_RUNNER.md)。
 
 ## 规则库
 
@@ -69,6 +74,7 @@ dotnet build .\src\XDiskInspector.App\XDiskInspector.App.csproj -c Release
 - `docs/superpowers/plans/2026-09-07-x-c-disk-inspector.md`
 - `docs/USER_GUIDE.md`
 - `docs/SAFETY.md`
+- `docs/SELF_HOSTED_RUNNER.md`
 
 ## 隐私
 
