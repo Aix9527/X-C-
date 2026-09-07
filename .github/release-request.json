@@ -2,5 +2,6 @@
   "tag": "v1.0.0-pr2-2f39853",
   "target_ref": "2f39853b5aae741a482f01f0c3d1525b8d34b510",
   "prerelease": true,
-  "reason": "Backfill the uniquely verified PR #2 Windows build (50/50 PASS)."
+  "attempt": 2,
+  "reason": "Retry backfill on the self-hosted Windows x64 runner after hosted runner allocation failed."
 }
