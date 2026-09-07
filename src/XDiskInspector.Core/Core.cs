@@ -37,6 +37,12 @@ public sealed class ScanItem : INotifyPropertyChanged
     public bool Selected { get => _selected; set { var safe = Selectable && value; if (_selected == safe) return; _selected = safe; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Selected))); } }
     public string RiskText => RiskLevel switch { RiskLevel.Low => "低", RiskLevel.Medium => "中", RiskLevel.High => "高", RiskLevel.Critical => "严重", _ => "未知" };
     public string RecommendationText => Recommendation switch { CleanupRecommendation.Suggested => "建议清理", CleanupRecommendation.Confirm => "需要确认", CleanupRecommendation.GuidanceOnly => "仅提供操作指导", _ => "保留" };
+    public string RecoveryText => CleanupKind switch
+    {
+        CleanupKind.File => "直接删除：文件本身不可恢复；缓存是否可重建见删除后果",
+        CleanupKind.RecycleBin => "清空后无法再从回收站恢复",
+        _ => "不执行自动删除"
+    };
     public event PropertyChangedEventHandler? PropertyChanged;
 }
 
