@@ -5,16 +5,16 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-Write-Host '=== X C盘巡检官 Release Runner 启动器 ===' -ForegroundColor Cyan
+Write-Host '=== X Disk Inspector Release Runner Launcher ===' -ForegroundColor Cyan
 Write-Host "Runner directory: $RunnerDirectory"
 
 if (-not (Test-Path $RunnerDirectory)) {
     Write-Host ''
-    Write-Host '未找到 Runner 目录。' -ForegroundColor Yellow
-    Write-Host '请先进入 GitHub 仓库：Settings -> Actions -> Runners -> New self-hosted runner'
-    Write-Host '选择 Windows / x64，并按 GitHub 页面生成的命令完成一次性注册。'
+    Write-Host 'Runner directory was not found.' -ForegroundColor Yellow
+    Write-Host 'Open GitHub repository: Settings -> Actions -> Runners -> New self-hosted runner'
+    Write-Host 'Choose Windows / x64 and complete the one-time registration using GitHub generated commands.'
     Write-Host ''
-    Write-Host "建议目录：$RunnerDirectory"
+    Write-Host "Recommended directory: $RunnerDirectory"
     exit 2
 }
 
@@ -22,25 +22,25 @@ $runCmd = Join-Path $RunnerDirectory 'run.cmd'
 $configMarker = Join-Path $RunnerDirectory '.runner'
 
 if (-not (Test-Path $runCmd)) {
-    Write-Host "未找到 $runCmd" -ForegroundColor Red
-    Write-Host '该目录看起来不是完整的 GitHub Actions Runner。'
+    Write-Host "run.cmd was not found: $runCmd" -ForegroundColor Red
+    Write-Host 'This directory does not look like a complete GitHub Actions Runner installation.'
     exit 3
 }
 
 if (-not (Test-Path $configMarker)) {
     Write-Host ''
-    Write-Host 'Runner 尚未完成 config.cmd 注册。' -ForegroundColor Yellow
-    Write-Host '请使用 GitHub Settings -> Actions -> Runners 页面当前生成的临时 Token 注册。'
-    Write-Host '不要把注册 Token 写入仓库、脚本、Issue、日志或截图。'
+    Write-Host 'Runner is not registered yet (missing .runner).' -ForegroundColor Yellow
+    Write-Host 'Use the temporary registration token currently shown in GitHub Settings -> Actions -> Runners.'
+    Write-Host 'Do not store the registration token in the repository, scripts, issues, logs, or screenshots.'
     exit 4
 }
 
 Write-Host ''
-Write-Host '正在启动 self-hosted Windows x64 Runner…' -ForegroundColor Green
-Write-Host '保持弹出的 Runner 窗口运行；当 GitHub 显示 Listening for Jobs / Idle 后，排队中的 Release 会自动开始。'
+Write-Host 'Starting self-hosted Windows x64 Runner...' -ForegroundColor Green
+Write-Host 'Keep the Runner window open. When it shows Listening for Jobs / Idle, the queued Release job will start automatically.'
 
 $cmdArgs = "/k `"cd /d `"`"$RunnerDirectory`"`" && call run.cmd`""
 Start-Process -FilePath 'cmd.exe' -ArgumentList $cmdArgs -WorkingDirectory $RunnerDirectory
 
-Write-Host 'Runner 窗口已启动。' -ForegroundColor Green
-Write-Host '可在 GitHub Actions 中查看：Release Windows x64'
+Write-Host 'Runner window started.' -ForegroundColor Green
+Write-Host 'Check GitHub Actions: Release Windows x64'
