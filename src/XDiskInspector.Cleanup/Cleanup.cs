@@ -267,7 +267,7 @@ public sealed class CleanupPreviewService
 }
 
 public enum CleanupItemStatus { Deleted, PartiallyDeleted, Skipped, Failed }
-public sealed record CleanupItemResult(string Path, CleanupItemStatus Status, long FreedBytes, string Message);
+public sealed record CleanupItemResult(string Path, CleanupItemStatus Status, long FreedBytes, string Message, bool RequiresRestart = false);
 
 public sealed class CleanupRunResult
 {
@@ -276,6 +276,7 @@ public sealed class CleanupRunResult
     public int DeletedCount => Items.Count(x => x.Status == CleanupItemStatus.Deleted);
     public int SkippedCount => Items.Count(x => x.Status == CleanupItemStatus.Skipped);
     public int FailedCount => Items.Count(x => x.Status == CleanupItemStatus.Failed);
+    public int RestartRequiredCount => Items.Count(x => x.RequiresRestart);
     public bool Stopped { get; set; }
 }
 
