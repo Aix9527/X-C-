@@ -1,13 +1,6 @@
-name: Windows CI
+name: Hosted Windows CI (optional)
 
 on:
-  push:
-    branches:
-      - main
-      - feat/xdiskinspector-v1
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -34,30 +27,9 @@ jobs:
           restore-keys: |
             nuget-${{ runner.os }}-
 
-      - name: Restore
-        run: dotnet restore XDiskInspector.sln
-
-      - name: Test
-        run: dotnet test tests/XDiskInspector.Tests/XDiskInspector.Tests.csproj -c Release --no-restore --logger "console;verbosity=normal"
-
-      - name: Build WPF app
-        run: dotnet build src/XDiskInspector.App/XDiskInspector.App.csproj -c Release --no-restore
-
-      - name: Publish single-file win-x64
+      - name: Verify, test, build and publish
         shell: pwsh
-        run: ./scripts/publish-win-x64.ps1 -OutputDirectory "${{ github.workspace }}\artifacts\win-x64"
-
-      - name: Verify published EXE
-        shell: pwsh
-        run: |
-          $exe = @(Get-ChildItem "${{ github.workspace }}\artifacts\win-x64" -Recurse -Filter XDiskInspector.App.exe -File)
-          if ($exe.Count -ne 1) {
-            throw "Expected exactly one XDiskInspector.App.exe, found $($exe.Count)."
-          }
-          if ($exe[0].Length -le 0) {
-            throw "Published XDiskInspector.App.exe is empty."
-          }
-          Write-Host "Verified: $($exe[0].FullName) ($($exe[0].Length) bytes)"
+        run: ./scripts/verify-win.ps1 -OutputDirectory "${{ github.workspace }}\artifacts\win-x64"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
