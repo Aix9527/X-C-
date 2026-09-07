@@ -8,7 +8,7 @@ namespace XDiskInspector.Tests;
 public sealed class PersistedReportSafetyTests
 {
     [Fact]
-    public async Task Json_round_trip_marks_report_as_persisted_clears_selection_and_allows_live_revalidated_preview()
+    public async Task Json_round_trip_marks_report_as_persisted_clears_selection_and_allows_dedicated_live_revalidation()
     {
         using var fixture = new TempDirectory();
         var cacheRoot = Directory.CreateDirectory(Path.Combine(fixture.Root, "Cache"));
@@ -51,11 +51,16 @@ public sealed class PersistedReportSafetyTests
         Assert.True(ScanReportRuntimeState.IsPersisted(loaded));
         Assert.All(loaded.CleanupCandidates, candidate => Assert.False(candidate.Selected));
 
+        var directPreview = new CleanupPreviewService(matcher, new SafePathPolicy())
+            .Build(loaded, loaded.CleanupCandidates);
+        Assert.False(directPreview.IsExecutable);
+        Assert.Contains(directPreview.Errors, error => error.Contains("历史报告"));
+
         var loadedItem = Assert.Single(loaded.CleanupCandidates);
         loadedItem.Selected = true;
         Assert.True(loadedItem.Selected);
 
-        var preview = new CleanupPreviewService(matcher, new SafePathPolicy())
+        var preview = new PersistedReportRevalidationService(matcher, new SafePathPolicy())
             .Build(loaded, loaded.CleanupCandidates);
 
         Assert.True(preview.IsExecutable);
@@ -123,12 +128,12 @@ public sealed class PersistedReportSafetyTests
         };
         var currentMatcher = new PathRuleMatcher(new RuleLibrary("current-deny", [denyRule]));
 
-        var preview = new CleanupPreviewService(currentMatcher, new SafePathPolicy())
+        var preview = new PersistedReportRevalidationService(currentMatcher, new SafePathPolicy())
             .Build(loaded, loaded.CleanupCandidates);
 
         Assert.False(preview.IsExecutable);
         Assert.Empty(preview.Candidates);
-        Assert.Contains(preview.Errors, error => error.Contains("当前规则库") || error.Contains("不再允许"));
+        Assert.Contains(preview.Errors, error => error.Contains("当前规则库") || error.Contains("不允许"));
         Assert.True(File.Exists(file));
     }
 
