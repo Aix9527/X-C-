@@ -44,6 +44,8 @@ Invoke-DotNetCommand -Arguments @(
     '--no-restore',
     '-p:PublishSingleFile=true',
     '-p:IncludeNativeLibrariesForSelfExtract=true',
+    '-p:DebugType=None',
+    '-p:DebugSymbols=false',
     '-o', $out
 )
 
@@ -53,6 +55,11 @@ if ($exe.Count -ne 1) {
 }
 if ($exe[0].Length -le 0) {
     throw 'Published XDiskInspector.App.exe is empty.'
+}
+
+$managedSidecars = @(Get-ChildItem $out -File | Where-Object { $_.Extension -in '.dll', '.pdb' })
+if ($managedSidecars.Count -gt 0) {
+    throw "Single-file publish found unexpected DLL/PDB sidecars: $($managedSidecars.Name -join ', ')"
 }
 
 Write-Host "Published: $($exe[0].FullName) ($($exe[0].Length) bytes)"
