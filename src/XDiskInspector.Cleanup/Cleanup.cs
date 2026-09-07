@@ -94,7 +94,7 @@ public sealed class SafePathPolicy
                 ancestor = ancestor.Parent;
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             return PathSafetyResult.Blocked($"无法验证路径安全属性：{ex.Message}", full);
         }
@@ -196,6 +196,17 @@ public sealed class CleanupPreviewService
             if (rule is null || !rule.AllowCleanup || current is null || !string.Equals(current.RuleId, item.CleanupRuleId, StringComparison.Ordinal))
             {
                 preview.Errors.Add($"{item.Path}：当前规则库不再允许该目标清理。");
+                continue;
+            }
+
+            if (current.CleanupKind == CleanupKind.File && item.Kind != ScanItemKind.File)
+            {
+                preview.Errors.Add($"{item.Path}：文件清理规则只接受扫描产生的文件项目。");
+                continue;
+            }
+            if (current.CleanupKind == CleanupKind.RecycleBin && item.Kind != ScanItemKind.Special)
+            {
+                preview.Errors.Add($"{item.Path}：回收站规则只接受扫描产生的特殊项目。");
                 continue;
             }
 
@@ -392,6 +403,11 @@ public sealed class CleanupExecutor
 
             if (classification.MinAgeDays.HasValue && currentLastWrite > DateTime.UtcNow.AddDays(-classification.MinAgeDays.Value))
                 return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, $"文件未达到 {classification.MinAgeDays.Value} 天最小保留时间。");
+
+            var finalSafety = _pathPolicy.Validate(candidate.Path);
+            if (!finalSafety.IsSafe || finalSafety.NormalizedPath is null ||
+                !string.Equals(finalSafety.NormalizedPath, safety.NormalizedPath, StringComparison.OrdinalIgnoreCase))
+                return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, finalSafety.Reason ?? "删除前最终路径安全复核失败。");
 
             var before = new FileInfo(candidate.Path).Length;
             File.Delete(candidate.Path);
