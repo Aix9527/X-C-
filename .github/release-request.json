@@ -1,7 +1,7 @@
 {
   "tag": "v1.0.0-pr2-f510b05-hotfix2",
-  "target_ref": "2d9bd8c2da869573ece5843d7939bb49b93da42e",
+  "target_ref": "ed4943535b705e40a84c140ad00525dc0b4eb681",
   "prerelease": true,
-  "attempt": 1,
-  "reason": "Publish f510b05 feature line after fixing the TwoWay binding startup crash caught by real-machine GUI acceptance (PR #10)."
+  "attempt": 2,
+  "reason": "Publish f510b05 feature line after fixing the TwoWay binding startup crash caught by real-machine GUI acceptance (PR #10, encoding re-commit)."
 }
