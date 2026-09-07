@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -20,7 +19,10 @@ public sealed class MainViewModel : ObservableObject
     private readonly FileSystemScanner _scanner;
     private readonly SafePathPolicy _pathPolicy;
     private readonly CleanupPreviewService _previewService;
+    private readonly PersistedReportRevalidationService _persistedRevalidationService;
     private readonly CleanupExecutor _cleanupExecutor;
+    private readonly ResponsiveCleanupExecutor _responsiveCleanupExecutor;
+    private readonly ElevatedCleanupBridge _elevatedCleanupBridge = new();
     private readonly JsonReportWriter _jsonWriter = new();
     private readonly HtmlReportWriter _htmlWriter = new();
     private CancellationTokenSource? _scanCts;
@@ -29,6 +31,10 @@ public sealed class MainViewModel : ObservableObject
     private int _selectedPageIndex;
     private bool _isScanning;
     private bool _isCleanupRunning;
+    private bool _suspendSelectionSummary;
+    private int _selectedCount;
+    private long _selectedBytes;
+    private RiskLevel? _highestSelectedRisk;
     private string _scanStatus = "尚未扫描";
     private string _currentPath = "—";
     private string _fileCountText = "0";
@@ -42,6 +48,11 @@ public sealed class MainViewModel : ObservableObject
     private string _riskFilter = "全部";
     private string _recommendationFilter = "全部";
     private string _softwareFilter = string.Empty;
+    private string _selectedSoftwareCategory = "全部软件";
+    private double _cleanupProgressPercent;
+    private string _cleanupProgressText = "尚未开始清理";
+    private string _cleanupCurrentItemText = "—";
+    private bool _cleanupProgressIndeterminate;
 
     public MainViewModel()
     {
@@ -50,7 +61,9 @@ public sealed class MainViewModel : ObservableObject
         _scanner = new FileSystemScanner(_matcher, IsAdministrator);
         _pathPolicy = new SafePathPolicy();
         _previewService = new CleanupPreviewService(_matcher, _pathPolicy);
+        _persistedRevalidationService = new PersistedReportRevalidationService(_matcher, _pathPolicy);
         _cleanupExecutor = new CleanupExecutor(_matcher, _pathPolicy);
+        _responsiveCleanupExecutor = new ResponsiveCleanupExecutor(_cleanupExecutor);
 
         CandidateView = CollectionViewSource.GetDefaultView(CleanupItems);
         CandidateView.Filter = CandidateFilter;
@@ -65,6 +78,8 @@ public sealed class MainViewModel : ObservableObject
         CancelScanCommand = new RelayCommand(_ => _scanCts?.Cancel(), _ => IsScanning);
         LoadLastReportCommand = new AsyncRelayCommand(_ => LoadLastReportAsync(), _ => !IsScanning && !IsCleanupRunning);
         SelectSuggestedCommand = new RelayCommand(_ => SelectSuggested(), _ => IsSelectionEditable);
+        SelectAllCommand = new RelayCommand(_ => SelectAll(), _ => IsSelectionEditable);
+        SelectSoftwareCommand = new RelayCommand(_ => SelectSoftware(), _ => IsSelectionEditable);
         ClearSelectionCommand = new RelayCommand(_ => ClearSelection(), _ => IsSelectionEditable);
         ExecuteCleanupCommand = new AsyncRelayCommand(_ => ExecuteCleanupAsync(), _ => CanExecuteCleanup);
         StopCleanupCommand = new RelayCommand(_ => _cleanupCts?.Cancel(), _ => IsCleanupRunning);
@@ -72,17 +87,19 @@ public sealed class MainViewModel : ObservableObject
         ExportHtmlCommand = new AsyncRelayCommand(_ => ExportHtmlAsync(), _ => CurrentReport is not null);
         RunOptimizationActionCommand = new RelayCommand(RunOptimizationAction);
 
-        foreach (var advice in OptimizationAdvisor.CreateDefaultAdvice()) OptimizationItems.Add(advice);
+        SoftwareCategories.ReplaceAll(["全部软件"]);
+        OptimizationItems.ReplaceAll(OptimizationAdvisor.CreateDefaultAdvice());
         RefreshDriveMetrics();
     }
 
-    public ObservableCollection<DirectoryUsage> MainOccupancies { get; } = [];
-    public ObservableCollection<ScanItem> HighlightedItems { get; } = [];
-    public ObservableCollection<ScanItem> LargeFiles { get; } = [];
-    public ObservableCollection<ScanItem> CleanupItems { get; } = [];
-    public ObservableCollection<ScanItem> GuidanceItems { get; } = [];
-    public ObservableCollection<CleanupItemResult> CleanupResults { get; } = [];
-    public ObservableCollection<OptimizationAdvice> OptimizationItems { get; } = [];
+    public BulkObservableCollection<DirectoryUsage> MainOccupancies { get; } = [];
+    public BulkObservableCollection<ScanItem> HighlightedItems { get; } = [];
+    public BulkObservableCollection<ScanItem> LargeFiles { get; } = [];
+    public BulkObservableCollection<ScanItem> CleanupItems { get; } = [];
+    public BulkObservableCollection<ScanItem> GuidanceItems { get; } = [];
+    public BulkObservableCollection<CleanupItemResult> CleanupResults { get; } = [];
+    public BulkObservableCollection<OptimizationAdvice> OptimizationItems { get; } = [];
+    public BulkObservableCollection<string> SoftwareCategories { get; } = [];
 
     public ICollectionView CandidateView { get; }
     public ICollectionView HighlightView { get; }
@@ -96,6 +113,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand CancelScanCommand { get; }
     public AsyncRelayCommand LoadLastReportCommand { get; }
     public RelayCommand SelectSuggestedCommand { get; }
+    public RelayCommand SelectAllCommand { get; }
+    public RelayCommand SelectSoftwareCommand { get; }
     public RelayCommand ClearSelectionCommand { get; }
     public AsyncRelayCommand ExecuteCleanupCommand { get; }
     public RelayCommand StopCleanupCommand { get; }
@@ -142,10 +161,10 @@ public sealed class MainViewModel : ObservableObject
             RaiseCommandStates();
         }
     }
-    public bool IsSelectionEditable => !IsCleanupRunning && !IsScanning && !IsPersistedReport;
+    public bool IsSelectionEditable => !IsCleanupRunning && !IsScanning;
     public bool IsCurrentReportRuleVersion => CurrentReport is not null && string.Equals(CurrentReport.RuleVersion, _matcher.RuleVersion, StringComparison.Ordinal);
     public bool IsPersistedReport => ScanReportRuntimeState.IsPersisted(CurrentReport);
-    public bool CanExecuteCleanup => CurrentReport?.IsComplete == true && IsCurrentReportRuleVersion && !IsPersistedReport && SelectedCount > 0 && !IsScanning && !IsCleanupRunning;
+    public bool CanExecuteCleanup => CurrentReport?.IsComplete == true && (IsPersistedReport || IsCurrentReportRuleVersion) && SelectedCount > 0 && !IsScanning && !IsCleanupRunning;
     public string ScanStatus { get => _scanStatus; private set => SetProperty(ref _scanStatus, value); }
     public string CurrentPath { get => _currentPath; private set => SetProperty(ref _currentPath, value); }
     public string FileCountText { get => _fileCountText; private set => SetProperty(ref _fileCountText, value); }
@@ -164,7 +183,7 @@ public sealed class MainViewModel : ObservableObject
         : !CurrentReport.IsComplete
             ? "不完整报告，已禁用批量清理"
             : IsPersistedReport
-                ? "历史报告仅供查看；要执行清理请重新扫描当前机器"
+                ? "历史报告已载入，可重新选择；删除前会按当前规则与当前文件状态实时复核"
                 : !IsCurrentReportRuleVersion
                     ? $"报告规则版本 {CurrentReport.RuleVersion} 已过期；当前规则 {_matcher.RuleVersion}，请重新扫描"
                     : "完整报告，可进行安全清理";
@@ -174,13 +193,18 @@ public sealed class MainViewModel : ObservableObject
     public string RiskFilter { get => _riskFilter; set { if (SetProperty(ref _riskFilter, value)) RefreshFilters(); } }
     public string RecommendationFilter { get => _recommendationFilter; set { if (SetProperty(ref _recommendationFilter, value)) RefreshFilters(); } }
     public string SoftwareFilter { get => _softwareFilter; set { if (SetProperty(ref _softwareFilter, value ?? string.Empty)) RefreshFilters(); } }
+    public string SelectedSoftwareCategory { get => _selectedSoftwareCategory; set => SetProperty(ref _selectedSoftwareCategory, string.IsNullOrWhiteSpace(value) ? "全部软件" : value); }
 
-    public int SelectedCount => CleanupItems.Count(x => x.Selected);
-    public string SelectedBytesText => ByteFormatter.Format(CleanupItems.Where(x => x.Selected).Sum(x => x.SizeBytes));
-    public string HighestSelectedRiskText => SelectedCount == 0 ? "无" : CleanupItems.Where(x => x.Selected).Max(x => x.RiskLevel) switch
+    public int SelectedCount => _selectedCount;
+    public string SelectedBytesText => ByteFormatter.Format(_selectedBytes);
+    public string HighestSelectedRiskText => _highestSelectedRisk switch
     {
         RiskLevel.Low => "低", RiskLevel.Medium => "中", RiskLevel.High => "高", RiskLevel.Critical => "严重", _ => "无"
     };
+    public double CleanupProgressPercent { get => _cleanupProgressPercent; private set => SetProperty(ref _cleanupProgressPercent, Math.Clamp(value, 0d, 100d)); }
+    public string CleanupProgressText { get => _cleanupProgressText; private set => SetProperty(ref _cleanupProgressText, value); }
+    public string CleanupCurrentItemText { get => _cleanupCurrentItemText; private set => SetProperty(ref _cleanupCurrentItemText, value); }
+    public bool CleanupProgressIndeterminate { get => _cleanupProgressIndeterminate; private set => SetProperty(ref _cleanupProgressIndeterminate, value); }
 
     private string LastReportPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XDiskInspector", "last-report.json");
 
@@ -196,7 +220,7 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             var progress = new Progress<ScanProgress>(p => { CurrentPath = p.CurrentPath; FileCountText = p.FileCount.ToString("N0"); ScannedSizeText = ByteFormatter.Format(p.LogicalBytes); ElapsedText = $"{p.Elapsed.TotalSeconds:0.0} 秒"; });
-            var report = await _scanner.ScanAsync(new ScanOptions { RootPath = @"C:\", LargeFileThresholdBytes = (long)(LargeFileThresholdMb * 1024 * 1024), MaxLargeFiles = 300, ProgressBatchSize = 300 }, progress, _scanCts.Token);
+            var report = await _scanner.ScanAsync(new ScanOptions { RootPath = @"C:\", LargeFileThresholdBytes = (long)(LargeFileThresholdMb * 1024 * 1024), MaxLargeFiles = 300, ProgressBatchSize = 1500 }, progress, _scanCts.Token);
             ApplyReport(report);
             ScanStatus = report.IsComplete ? "扫描完成" : "扫描已取消：报告不完整，批量清理已禁用";
             await TrySaveLastReportAsync(report);
@@ -215,9 +239,7 @@ public sealed class MainViewModel : ObservableObject
             ApplyReport(report);
             ScanStatus = !report.IsComplete
                 ? "已载入上次不完整报告（仅供查看）"
-                : !IsCurrentReportRuleVersion
-                    ? "已载入旧规则版本历史报告（仅供查看，请重新扫描）"
-                    : "已载入历史报告（仅供查看；清理前必须重新扫描当前机器）";
+                : "已载入历史报告：可重新选择；执行删除前会按当前规则与当前文件状态实时复核";
             SelectedPageIndex = 1;
         }
         catch (Exception ex) { MessageBox.Show($"无法载入上次报告：{ex.Message}", "载入上次报告", MessageBoxButton.OK, MessageBoxImage.Warning); }
@@ -227,45 +249,172 @@ public sealed class MainViewModel : ObservableObject
     {
         CurrentReport = report; _diskTotal = report.DiskTotalBytes; _diskUsed = report.DiskUsedBytes; _diskFree = report.DiskFreeBytes;
         Raise(nameof(DiskTotalText)); Raise(nameof(DiskUsedText)); Raise(nameof(DiskFreeText)); Raise(nameof(DiskUsedPercent)); Raise(nameof(DiskUsedPercentText)); Raise(nameof(AccessibleLogicalText)); Raise(nameof(ScanCompletenessText));
-        ClearReportCollections();
-        foreach (var item in report.MainOccupancies) MainOccupancies.Add(item);
-        foreach (var item in report.HighlightedItems) HighlightedItems.Add(item);
-        foreach (var item in report.LargeFiles) LargeFiles.Add(item);
-        foreach (var item in report.CleanupCandidates) { item.PropertyChanged += CleanupItemOnPropertyChanged; CleanupItems.Add(item); }
-        foreach (var item in report.HighlightedItems.Where(x => x.Recommendation == CleanupRecommendation.GuidanceOnly)) GuidanceItems.Add(item);
-        RefreshFilters(); RaiseSelectionSummary();
+
+        foreach (var item in CleanupItems) item.PropertyChanged -= CleanupItemOnPropertyChanged;
+        foreach (var item in report.CleanupCandidates) item.PropertyChanged += CleanupItemOnPropertyChanged;
+
+        MainOccupancies.ReplaceAll(report.MainOccupancies);
+        HighlightedItems.ReplaceAll(report.HighlightedItems);
+        LargeFiles.ReplaceAll(report.LargeFiles);
+        CleanupItems.ReplaceAll(report.CleanupCandidates);
+        GuidanceItems.ReplaceAll(report.HighlightedItems.Where(x => x.Recommendation == CleanupRecommendation.GuidanceOnly));
+        CleanupResults.ReplaceAll([]);
+        RefreshSoftwareCategories();
+        ResetCleanupProgress();
+        RaiseSelectionSummary();
     }
 
     private void ClearReportCollections()
     {
         foreach (var item in CleanupItems) item.PropertyChanged -= CleanupItemOnPropertyChanged;
-        MainOccupancies.Clear(); HighlightedItems.Clear(); LargeFiles.Clear(); CleanupItems.Clear(); GuidanceItems.Clear(); CleanupResults.Clear(); RaiseSelectionSummary();
+        MainOccupancies.ReplaceAll([]); HighlightedItems.ReplaceAll([]); LargeFiles.ReplaceAll([]); CleanupItems.ReplaceAll([]); GuidanceItems.ReplaceAll([]); CleanupResults.ReplaceAll([]);
+        SoftwareCategories.ReplaceAll(["全部软件"]); SelectedSoftwareCategory = "全部软件";
+        ResetCleanupProgress();
+        RaiseSelectionSummary();
     }
 
-    private void CleanupItemOnPropertyChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName == nameof(ScanItem.Selected)) RaiseSelectionSummary(); }
-    private void SelectSuggested() { SelectionPolicy.SelectSuggested(CandidateView.Cast<ScanItem>()); RaiseSelectionSummary(); }
-    private void ClearSelection() { foreach (var item in CleanupItems) item.Selected = false; RaiseSelectionSummary(); }
+    private void CleanupItemOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ScanItem.Selected) && !_suspendSelectionSummary) RaiseSelectionSummary();
+    }
+
+    private void SelectSuggested() => MutateSelection(() => SelectionPolicy.SelectSuggested(CandidateView.Cast<ScanItem>()));
+    private void SelectAll() => MutateSelection(() => SelectionPolicy.SelectAll(CandidateView.Cast<ScanItem>()));
+    private void SelectSoftware() => MutateSelection(() =>
+    {
+        var visible = CandidateView.Cast<ScanItem>();
+        if (string.Equals(SelectedSoftwareCategory, "全部软件", StringComparison.Ordinal)) SelectionPolicy.SelectAll(visible);
+        else SelectionPolicy.SelectSoftware(visible, SelectedSoftwareCategory);
+    });
+    private void ClearSelection() => MutateSelection(() => { foreach (var item in CleanupItems) item.Selected = false; });
+
+    private void MutateSelection(Action action)
+    {
+        _suspendSelectionSummary = true;
+        try { action(); }
+        finally { _suspendSelectionSummary = false; }
+        RaiseSelectionSummary();
+    }
 
     private async Task ExecuteCleanupAsync()
     {
         if (CurrentReport is null) return;
-        var preview = _previewService.Build(CurrentReport, CleanupItems);
+        var preview = IsPersistedReport
+            ? _persistedRevalidationService.Build(CurrentReport, CleanupItems)
+            : _previewService.Build(CurrentReport, CleanupItems);
         if (preview.Errors.Count > 0) { MessageBox.Show(string.Join(Environment.NewLine, preview.Errors.Take(10)), "清理预览被安全规则阻止", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
         if (preview.Candidates.Count == 0) { MessageBox.Show("没有通过最终安全复核的已选项目。", "安全清理", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         var dialog = new CleanupConfirmationWindow(preview) { Owner = Application.Current.MainWindow };
         if (dialog.ShowDialog() != true || !dialog.Confirmed) return;
-        _cleanupCts?.Dispose(); _cleanupCts = new CancellationTokenSource(); IsCleanupRunning = true; CleanupResults.Clear();
+
+        SelectedPageIndex = 2;
+        _cleanupCts?.Dispose();
+        _cleanupCts = new CancellationTokenSource();
+        IsCleanupRunning = true;
+        CleanupResults.ReplaceAll([]);
+        CleanupProgressPercent = 0;
+        CleanupProgressIndeterminate = false;
+        CleanupProgressText = $"准备清理 0/{preview.Candidates.Count} 项";
+        CleanupCurrentItemText = "正在准备…";
+
+        var options = new CleanupExecutionOptions(dialog.AllowRecycleBinIrreversible);
+        var progress = new Progress<CleanupProgress>(OnCleanupProgress);
+
         try
         {
-            var result = await _cleanupExecutor.ExecuteAsync(preview, new CleanupExecutionOptions(dialog.AllowRecycleBinIrreversible), _cleanupCts.Token);
-            foreach (var item in result.Items) CleanupResults.Add(item);
-            foreach (var deleted in result.Items.Where(x => x.Status == CleanupItemStatus.Deleted)) { var source = CleanupItems.FirstOrDefault(x => string.Equals(x.Path, deleted.Path, StringComparison.OrdinalIgnoreCase)); if (source is not null) source.Selected = false; }
-            RaiseSelectionSummary();
+            var responsiveResult = await _responsiveCleanupExecutor.ExecuteAsync(preview, options, _cleanupCts.Token, progress);
+            var result = responsiveResult.RunResult;
+
+            if (responsiveResult.RequiresElevation.Count > 0 && !_cleanupCts.IsCancellationRequested)
+            {
+                var answer = MessageBox.Show(
+                    $"有 {responsiveResult.RequiresElevation.Count} 个项目因权限不足未删除。\n\n是否现在获取管理员权限（UAC）并仅重试这些项目？\n\n管理员模式仍会重新检查当前规则、路径、文件状态和保留时间。",
+                    "需要管理员权限",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (answer == MessageBoxResult.Yes)
+                {
+                    CleanupProgressIndeterminate = true;
+                    CleanupProgressText = "正在请求管理员权限…";
+                    CleanupCurrentItemText = "等待 Windows UAC 确认";
+
+                    var elevated = await _elevatedCleanupBridge.RunAsync(responsiveResult.RequiresElevation, options, progress);
+                    CleanupProgressIndeterminate = false;
+
+                    if (elevated.Result is not null)
+                    {
+                        var elevatedPaths = responsiveResult.RequiresElevation
+                            .Select(x => x.Path)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                        result.Items.RemoveAll(x =>
+                            elevatedPaths.Contains(x.Path) &&
+                            x.Status == CleanupItemStatus.Failed &&
+                            x.Message.StartsWith("权限不足", StringComparison.OrdinalIgnoreCase));
+                        result.Items.AddRange(elevated.Result.Items);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(elevated.Error))
+                    {
+                        MessageBox.Show(elevated.Error, "管理员清理未执行", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+            }
+
+            CleanupResults.ReplaceAll(result.Items);
+            MutateSelection(() =>
+            {
+                foreach (var deleted in result.Items.Where(x => x.Status == CleanupItemStatus.Deleted))
+                {
+                    var source = CleanupItems.FirstOrDefault(x => string.Equals(x.Path, deleted.Path, StringComparison.OrdinalIgnoreCase));
+                    if (source is not null) source.Selected = false;
+                }
+            });
+
+            if (!result.Stopped)
+            {
+                CleanupProgressPercent = 100;
+                CleanupProgressText = $"清理完成 · 成功 {result.DeletedCount} · 跳过 {result.SkippedCount} · 失败 {result.FailedCount}";
+                CleanupCurrentItemText = "全部已处理";
+            }
+            else
+            {
+                CleanupProgressText = $"已停止后续项目 · 当前已处理 {result.Items.Count} 项";
+                CleanupCurrentItemText = "停止只影响后续项目；当前单项操作不会被强制中断";
+            }
+
             var restart = result.RestartRequiredCount > 0 ? $"\n需要重启：{result.RestartRequiredCount} 项。" : "\n需要重启：0 项。";
             var stopped = result.Stopped ? "\n用户已停止后续项目。" : string.Empty;
             MessageBox.Show($"清理完成：成功 {result.DeletedCount}，跳过 {result.SkippedCount}，失败 {result.FailedCount}。\n实际释放：{ByteFormatter.Format(result.ActualFreedBytes)}{restart}{stopped}", "安全清理结果", MessageBoxButton.OK, result.FailedCount > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
-        finally { IsCleanupRunning = false; }
+        catch (Exception ex)
+        {
+            CleanupProgressIndeterminate = false;
+            CleanupProgressText = "清理过程发生错误";
+            CleanupCurrentItemText = ex.Message;
+            MessageBox.Show($"清理过程未正常完成：{ex.Message}", "安全清理", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            IsCleanupRunning = false;
+        }
+    }
+
+    private void OnCleanupProgress(CleanupProgress progress)
+    {
+        CleanupProgressIndeterminate = false;
+        CleanupProgressPercent = progress.Percent;
+        CleanupProgressText = $"已处理 {progress.CompletedCount}/{progress.TotalCount} 项 · {ByteFormatter.Format(progress.EstimatedCompletedBytes)} / {ByteFormatter.Format(progress.EstimatedTotalBytes)} · {progress.Percent:0.0}%";
+        CleanupCurrentItemText = progress.IsCurrentItemActive
+            ? $"正在删除：{progress.CurrentPath}"
+            : $"已处理：{progress.CurrentPath}";
+    }
+
+    private void ResetCleanupProgress()
+    {
+        CleanupProgressPercent = 0;
+        CleanupProgressIndeterminate = false;
+        CleanupProgressText = "尚未开始清理";
+        CleanupCurrentItemText = "—";
     }
 
     private async Task ExportJsonAsync()
@@ -309,6 +458,14 @@ public sealed class MainViewModel : ObservableObject
         Raise(nameof(DiskTotalText)); Raise(nameof(DiskUsedText)); Raise(nameof(DiskFreeText)); Raise(nameof(DiskUsedPercent)); Raise(nameof(DiskUsedPercentText));
     }
 
+    private void RefreshSoftwareCategories()
+    {
+        var categories = new[] { "全部软件" }
+            .Concat(CleanupItems.Select(x => x.Software).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase));
+        SoftwareCategories.ReplaceAll(categories);
+        if (!SoftwareCategories.Contains(SelectedSoftwareCategory)) SelectedSoftwareCategory = "全部软件";
+    }
+
     private bool CandidateFilter(object obj) => obj is ScanItem item && CommonFilter(item);
     private bool HighlightFilter(object obj) => obj is ScanItem item && CommonFilter(item);
     private bool LargeFileFilter(object obj) => obj is ScanItem item && item.SizeBytes >= LargeFileThresholdMb * 1024 * 1024 && CommonFilter(item);
@@ -321,10 +478,28 @@ public sealed class MainViewModel : ObservableObject
         return true;
     }
     private void RefreshFilters() { CandidateView.Refresh(); HighlightView.Refresh(); LargeFileView.Refresh(); }
-    private void RaiseSelectionSummary() { Raise(nameof(SelectedCount)); Raise(nameof(SelectedBytesText)); Raise(nameof(HighestSelectedRiskText)); Raise(nameof(CanExecuteCleanup)); ExecuteCleanupCommand.RaiseCanExecuteChanged(); }
+
+    private void RaiseSelectionSummary()
+    {
+        var count = 0;
+        long bytes = 0;
+        RiskLevel? highest = null;
+        foreach (var item in CleanupItems)
+        {
+            if (!item.Selected) continue;
+            count++;
+            bytes += item.SizeBytes;
+            if (!highest.HasValue || item.RiskLevel > highest.Value) highest = item.RiskLevel;
+        }
+        _selectedCount = count;
+        _selectedBytes = bytes;
+        _highestSelectedRisk = highest;
+        Raise(nameof(SelectedCount)); Raise(nameof(SelectedBytesText)); Raise(nameof(HighestSelectedRiskText)); Raise(nameof(CanExecuteCleanup)); ExecuteCleanupCommand.RaiseCanExecuteChanged();
+    }
+
     private void RaiseCommandStates()
     {
-        StartScanCommand.RaiseCanExecuteChanged(); CancelScanCommand.RaiseCanExecuteChanged(); LoadLastReportCommand.RaiseCanExecuteChanged(); SelectSuggestedCommand.RaiseCanExecuteChanged(); ClearSelectionCommand.RaiseCanExecuteChanged(); ExecuteCleanupCommand.RaiseCanExecuteChanged(); StopCleanupCommand.RaiseCanExecuteChanged(); ExportJsonCommand.RaiseCanExecuteChanged(); ExportHtmlCommand.RaiseCanExecuteChanged();
+        StartScanCommand.RaiseCanExecuteChanged(); CancelScanCommand.RaiseCanExecuteChanged(); LoadLastReportCommand.RaiseCanExecuteChanged(); SelectSuggestedCommand.RaiseCanExecuteChanged(); SelectAllCommand.RaiseCanExecuteChanged(); SelectSoftwareCommand.RaiseCanExecuteChanged(); ClearSelectionCommand.RaiseCanExecuteChanged(); ExecuteCleanupCommand.RaiseCanExecuteChanged(); StopCleanupCommand.RaiseCanExecuteChanged(); ExportJsonCommand.RaiseCanExecuteChanged(); ExportHtmlCommand.RaiseCanExecuteChanged();
     }
     private static bool IsAdministrator()
     {
