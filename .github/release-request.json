@@ -1,7 +1,7 @@
 {
-  "tag": "v1.0.0",
-  "target_ref": "6c1f3cf60f5a1b46b65719447dead2a1dc359d63",
-  "prerelease": false,
+  "tag": "v1.0.0-pr2-e5c01c",
+  "target_ref": "e5c01cac9e28030487cc6f67aa282f3ea821f05b",
+  "prerelease": true,
   "attempt": 1,
-  "reason": "Backfill the PR #1 final Windows-verified v1 release (45/45 PASS)."
+  "reason": "Backfill the first PR #2 performance/contrast Windows-verified milestone."
 }
