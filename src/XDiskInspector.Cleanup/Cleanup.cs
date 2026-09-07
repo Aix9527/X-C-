@@ -12,25 +12,29 @@ public sealed record PathSafetyResult(bool IsSafe, string? Reason, string? Norma
 
 public sealed class SafePathPolicy
 {
-    private readonly string[] _forbiddenRoots;
+    private readonly string[] _forbiddenExactRoots;
+    private readonly string[] _forbiddenTrees;
 
     public SafePathPolicy(IEnumerable<string>? extraForbiddenRoots = null)
     {
-        var roots = new List<string>();
-        AddIfPresent(roots, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        AddIfPresent(roots, Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
-        AddIfPresent(roots, Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
-        AddIfPresent(roots, Environment.GetFolderPath(Environment.SpecialFolder.MyVideos));
-        AddIfPresent(roots, Environment.GetFolderPath(Environment.SpecialFolder.Windows));
-        AddIfPresent(roots, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
-        AddIfPresent(roots, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86));
+        var exactRoots = new List<string>();
+        AddIfPresent(exactRoots, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        AddIfPresent(exactRoots, Environment.GetFolderPath(Environment.SpecialFolder.Windows));
+        AddIfPresent(exactRoots, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
+        AddIfPresent(exactRoots, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86));
+
+        var trees = new List<string>();
+        AddIfPresent(trees, Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
+        AddIfPresent(trees, Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+        AddIfPresent(trees, Environment.GetFolderPath(Environment.SpecialFolder.MyVideos));
 
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrWhiteSpace(profile)) AddIfPresent(roots, Path.Combine(profile, "Downloads"));
+        if (!string.IsNullOrWhiteSpace(profile)) AddIfPresent(trees, Path.Combine(profile, "Downloads"));
         if (extraForbiddenRoots is not null)
-            foreach (var root in extraForbiddenRoots) AddIfPresent(roots, root);
+            foreach (var root in extraForbiddenRoots) AddIfPresent(trees, root);
 
-        _forbiddenRoots = roots.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        _forbiddenExactRoots = exactRoots.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        _forbiddenTrees = trees.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     public PathSafetyResult Validate(string path)
@@ -45,9 +49,14 @@ public sealed class SafePathPolicy
         var root = Path.GetPathRoot(full);
         if (!string.IsNullOrWhiteSpace(root) && PathsEqual(full, root)) return PathSafetyResult.Blocked("禁止删除磁盘根目录", full);
 
-        foreach (var forbidden in _forbiddenRoots)
+        foreach (var forbidden in _forbiddenExactRoots)
         {
             if (PathsEqual(full, forbidden)) return PathSafetyResult.Blocked("禁止删除受保护目录根", full);
+        }
+
+        foreach (var forbidden in _forbiddenTrees)
+        {
+            if (IsSameOrDescendant(full, forbidden)) return PathSafetyResult.Blocked("受保护个人或自定义目录及其子路径禁止自动清理", full);
         }
 
         var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
