@@ -24,6 +24,40 @@ public sealed class ProductContractTests
     }
 
     [Fact]
+    public void Select_all_only_changes_current_visible_selectable_scope()
+    {
+        var suggested = Item("suggested", true, "rule.safe", CleanupRecommendation.Suggested, RiskLevel.Low);
+        var confirm = Item("confirm", true, "rule.confirm", CleanupRecommendation.Confirm, RiskLevel.Medium);
+        var blocked = Item("blocked", false, null, CleanupRecommendation.Suggested, RiskLevel.Low);
+        var hidden = Item("hidden", true, "rule.safe", CleanupRecommendation.Suggested, RiskLevel.Low);
+
+        var count = SelectionPolicy.SelectAll([suggested, confirm, blocked]);
+
+        Assert.Equal(2, count);
+        Assert.True(suggested.Selected);
+        Assert.True(confirm.Selected);
+        Assert.False(blocked.Selected);
+        Assert.False(hidden.Selected);
+    }
+
+    [Fact]
+    public void Select_software_only_changes_matching_visible_selectable_items()
+    {
+        var nvidiaA = Item("nvidia-a", true, "rule.nvidia", CleanupRecommendation.Confirm, RiskLevel.Medium, "NVIDIA 驱动更新包");
+        var nvidiaB = Item("nvidia-b", true, "rule.nvidia", CleanupRecommendation.Suggested, RiskLevel.Low, "NVIDIA 驱动更新包");
+        var nvidiaBlocked = Item("nvidia-blocked", false, null, CleanupRecommendation.Keep, RiskLevel.High, "NVIDIA 驱动更新包");
+        var npm = Item("npm", true, "rule.npm", CleanupRecommendation.Confirm, RiskLevel.Medium, "npm");
+
+        var count = SelectionPolicy.SelectSoftware([nvidiaA, nvidiaB, nvidiaBlocked, npm], "NVIDIA 驱动更新包");
+
+        Assert.Equal(2, count);
+        Assert.True(nvidiaA.Selected);
+        Assert.True(nvidiaB.Selected);
+        Assert.False(nvidiaBlocked.Selected);
+        Assert.False(npm.Selected);
+    }
+
+    [Fact]
     public void Safe_path_policy_rejects_user_root_and_windows_critical_directories()
     {
         var policy = new SafePathPolicy();
@@ -85,7 +119,7 @@ public sealed class ProductContractTests
         Assert.Equal(2, run.RestartRequiredCount);
     }
 
-    private static ScanItem Item(string path, bool selectable, string? ruleId, CleanupRecommendation recommendation, RiskLevel risk)
+    private static ScanItem Item(string path, bool selectable, string? ruleId, CleanupRecommendation recommendation, RiskLevel risk, string? software = null)
         => new()
         {
             Path = path,
@@ -93,6 +127,7 @@ public sealed class ProductContractTests
             Selectable = selectable,
             CleanupRuleId = ruleId,
             Recommendation = recommendation,
-            RiskLevel = risk
+            RiskLevel = risk,
+            Software = software
         };
 }
