@@ -19,6 +19,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly FileSystemScanner _scanner;
     private readonly SafePathPolicy _pathPolicy;
     private readonly CleanupPreviewService _previewService;
+    private readonly PersistedReportRevalidationService _persistedRevalidationService;
     private readonly CleanupExecutor _cleanupExecutor;
     private readonly JsonReportWriter _jsonWriter = new();
     private readonly HtmlReportWriter _htmlWriter = new();
@@ -45,6 +46,7 @@ public sealed class MainViewModel : ObservableObject
     private string _riskFilter = "全部";
     private string _recommendationFilter = "全部";
     private string _softwareFilter = string.Empty;
+    private string _selectedSoftwareCategory = "全部软件";
 
     public MainViewModel()
     {
@@ -53,6 +55,7 @@ public sealed class MainViewModel : ObservableObject
         _scanner = new FileSystemScanner(_matcher, IsAdministrator);
         _pathPolicy = new SafePathPolicy();
         _previewService = new CleanupPreviewService(_matcher, _pathPolicy);
+        _persistedRevalidationService = new PersistedReportRevalidationService(_matcher, _pathPolicy);
         _cleanupExecutor = new CleanupExecutor(_matcher, _pathPolicy);
 
         CandidateView = CollectionViewSource.GetDefaultView(CleanupItems);
@@ -68,6 +71,8 @@ public sealed class MainViewModel : ObservableObject
         CancelScanCommand = new RelayCommand(_ => _scanCts?.Cancel(), _ => IsScanning);
         LoadLastReportCommand = new AsyncRelayCommand(_ => LoadLastReportAsync(), _ => !IsScanning && !IsCleanupRunning);
         SelectSuggestedCommand = new RelayCommand(_ => SelectSuggested(), _ => IsSelectionEditable);
+        SelectAllCommand = new RelayCommand(_ => SelectAll(), _ => IsSelectionEditable);
+        SelectSoftwareCommand = new RelayCommand(_ => SelectSoftware(), _ => IsSelectionEditable);
         ClearSelectionCommand = new RelayCommand(_ => ClearSelection(), _ => IsSelectionEditable);
         ExecuteCleanupCommand = new AsyncRelayCommand(_ => ExecuteCleanupAsync(), _ => CanExecuteCleanup);
         StopCleanupCommand = new RelayCommand(_ => _cleanupCts?.Cancel(), _ => IsCleanupRunning);
@@ -75,6 +80,7 @@ public sealed class MainViewModel : ObservableObject
         ExportHtmlCommand = new AsyncRelayCommand(_ => ExportHtmlAsync(), _ => CurrentReport is not null);
         RunOptimizationActionCommand = new RelayCommand(RunOptimizationAction);
 
+        SoftwareCategories.ReplaceAll(["全部软件"]);
         OptimizationItems.ReplaceAll(OptimizationAdvisor.CreateDefaultAdvice());
         RefreshDriveMetrics();
     }
@@ -86,6 +92,7 @@ public sealed class MainViewModel : ObservableObject
     public BulkObservableCollection<ScanItem> GuidanceItems { get; } = [];
     public BulkObservableCollection<CleanupItemResult> CleanupResults { get; } = [];
     public BulkObservableCollection<OptimizationAdvice> OptimizationItems { get; } = [];
+    public BulkObservableCollection<string> SoftwareCategories { get; } = [];
 
     public ICollectionView CandidateView { get; }
     public ICollectionView HighlightView { get; }
@@ -99,6 +106,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand CancelScanCommand { get; }
     public AsyncRelayCommand LoadLastReportCommand { get; }
     public RelayCommand SelectSuggestedCommand { get; }
+    public RelayCommand SelectAllCommand { get; }
+    public RelayCommand SelectSoftwareCommand { get; }
     public RelayCommand ClearSelectionCommand { get; }
     public AsyncRelayCommand ExecuteCleanupCommand { get; }
     public RelayCommand StopCleanupCommand { get; }
@@ -145,10 +154,10 @@ public sealed class MainViewModel : ObservableObject
             RaiseCommandStates();
         }
     }
-    public bool IsSelectionEditable => !IsCleanupRunning && !IsScanning && !IsPersistedReport;
+    public bool IsSelectionEditable => !IsCleanupRunning && !IsScanning;
     public bool IsCurrentReportRuleVersion => CurrentReport is not null && string.Equals(CurrentReport.RuleVersion, _matcher.RuleVersion, StringComparison.Ordinal);
     public bool IsPersistedReport => ScanReportRuntimeState.IsPersisted(CurrentReport);
-    public bool CanExecuteCleanup => CurrentReport?.IsComplete == true && IsCurrentReportRuleVersion && !IsPersistedReport && SelectedCount > 0 && !IsScanning && !IsCleanupRunning;
+    public bool CanExecuteCleanup => CurrentReport?.IsComplete == true && (IsPersistedReport || IsCurrentReportRuleVersion) && SelectedCount > 0 && !IsScanning && !IsCleanupRunning;
     public string ScanStatus { get => _scanStatus; private set => SetProperty(ref _scanStatus, value); }
     public string CurrentPath { get => _currentPath; private set => SetProperty(ref _currentPath, value); }
     public string FileCountText { get => _fileCountText; private set => SetProperty(ref _fileCountText, value); }
@@ -167,7 +176,7 @@ public sealed class MainViewModel : ObservableObject
         : !CurrentReport.IsComplete
             ? "不完整报告，已禁用批量清理"
             : IsPersistedReport
-                ? "历史报告仅供查看；要执行清理请重新扫描当前机器"
+                ? "历史报告已载入，可重新选择；删除前会按当前规则与当前文件状态实时复核"
                 : !IsCurrentReportRuleVersion
                     ? $"报告规则版本 {CurrentReport.RuleVersion} 已过期；当前规则 {_matcher.RuleVersion}，请重新扫描"
                     : "完整报告，可进行安全清理";
@@ -177,6 +186,7 @@ public sealed class MainViewModel : ObservableObject
     public string RiskFilter { get => _riskFilter; set { if (SetProperty(ref _riskFilter, value)) RefreshFilters(); } }
     public string RecommendationFilter { get => _recommendationFilter; set { if (SetProperty(ref _recommendationFilter, value)) RefreshFilters(); } }
     public string SoftwareFilter { get => _softwareFilter; set { if (SetProperty(ref _softwareFilter, value ?? string.Empty)) RefreshFilters(); } }
+    public string SelectedSoftwareCategory { get => _selectedSoftwareCategory; set => SetProperty(ref _selectedSoftwareCategory, string.IsNullOrWhiteSpace(value) ? "全部软件" : value); }
 
     public int SelectedCount => _selectedCount;
     public string SelectedBytesText => ByteFormatter.Format(_selectedBytes);
@@ -218,9 +228,7 @@ public sealed class MainViewModel : ObservableObject
             ApplyReport(report);
             ScanStatus = !report.IsComplete
                 ? "已载入上次不完整报告（仅供查看）"
-                : !IsCurrentReportRuleVersion
-                    ? "已载入旧规则版本历史报告（仅供查看，请重新扫描）"
-                    : "已载入历史报告（仅供查看；清理前必须重新扫描当前机器）";
+                : "已载入历史报告：可重新选择；执行删除前会按当前规则与当前文件状态实时复核";
             SelectedPageIndex = 1;
         }
         catch (Exception ex) { MessageBox.Show($"无法载入上次报告：{ex.Message}", "载入上次报告", MessageBoxButton.OK, MessageBoxImage.Warning); }
@@ -240,6 +248,7 @@ public sealed class MainViewModel : ObservableObject
         CleanupItems.ReplaceAll(report.CleanupCandidates);
         GuidanceItems.ReplaceAll(report.HighlightedItems.Where(x => x.Recommendation == CleanupRecommendation.GuidanceOnly));
         CleanupResults.ReplaceAll([]);
+        RefreshSoftwareCategories();
         RaiseSelectionSummary();
     }
 
@@ -247,6 +256,7 @@ public sealed class MainViewModel : ObservableObject
     {
         foreach (var item in CleanupItems) item.PropertyChanged -= CleanupItemOnPropertyChanged;
         MainOccupancies.ReplaceAll([]); HighlightedItems.ReplaceAll([]); LargeFiles.ReplaceAll([]); CleanupItems.ReplaceAll([]); GuidanceItems.ReplaceAll([]); CleanupResults.ReplaceAll([]);
+        SoftwareCategories.ReplaceAll(["全部软件"]); SelectedSoftwareCategory = "全部软件";
         RaiseSelectionSummary();
     }
 
@@ -256,6 +266,13 @@ public sealed class MainViewModel : ObservableObject
     }
 
     private void SelectSuggested() => MutateSelection(() => SelectionPolicy.SelectSuggested(CandidateView.Cast<ScanItem>()));
+    private void SelectAll() => MutateSelection(() => SelectionPolicy.SelectAll(CandidateView.Cast<ScanItem>()));
+    private void SelectSoftware() => MutateSelection(() =>
+    {
+        var visible = CandidateView.Cast<ScanItem>();
+        if (string.Equals(SelectedSoftwareCategory, "全部软件", StringComparison.Ordinal)) SelectionPolicy.SelectAll(visible);
+        else SelectionPolicy.SelectSoftware(visible, SelectedSoftwareCategory);
+    });
     private void ClearSelection() => MutateSelection(() => { foreach (var item in CleanupItems) item.Selected = false; });
 
     private void MutateSelection(Action action)
@@ -269,7 +286,9 @@ public sealed class MainViewModel : ObservableObject
     private async Task ExecuteCleanupAsync()
     {
         if (CurrentReport is null) return;
-        var preview = _previewService.Build(CurrentReport, CleanupItems);
+        var preview = IsPersistedReport
+            ? _persistedRevalidationService.Build(CurrentReport, CleanupItems)
+            : _previewService.Build(CurrentReport, CleanupItems);
         if (preview.Errors.Count > 0) { MessageBox.Show(string.Join(Environment.NewLine, preview.Errors.Take(10)), "清理预览被安全规则阻止", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
         if (preview.Candidates.Count == 0) { MessageBox.Show("没有通过最终安全复核的已选项目。", "安全清理", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         var dialog = new CleanupConfirmationWindow(preview) { Owner = Application.Current.MainWindow };
@@ -335,6 +354,14 @@ public sealed class MainViewModel : ObservableObject
         Raise(nameof(DiskTotalText)); Raise(nameof(DiskUsedText)); Raise(nameof(DiskFreeText)); Raise(nameof(DiskUsedPercent)); Raise(nameof(DiskUsedPercentText));
     }
 
+    private void RefreshSoftwareCategories()
+    {
+        var categories = new[] { "全部软件" }
+            .Concat(CleanupItems.Select(x => x.Software).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase));
+        SoftwareCategories.ReplaceAll(categories);
+        if (!SoftwareCategories.Contains(SelectedSoftwareCategory)) SelectedSoftwareCategory = "全部软件";
+    }
+
     private bool CandidateFilter(object obj) => obj is ScanItem item && CommonFilter(item);
     private bool HighlightFilter(object obj) => obj is ScanItem item && CommonFilter(item);
     private bool LargeFileFilter(object obj) => obj is ScanItem item && item.SizeBytes >= LargeFileThresholdMb * 1024 * 1024 && CommonFilter(item);
@@ -368,7 +395,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void RaiseCommandStates()
     {
-        StartScanCommand.RaiseCanExecuteChanged(); CancelScanCommand.RaiseCanExecuteChanged(); LoadLastReportCommand.RaiseCanExecuteChanged(); SelectSuggestedCommand.RaiseCanExecuteChanged(); ClearSelectionCommand.RaiseCanExecuteChanged(); ExecuteCleanupCommand.RaiseCanExecuteChanged(); StopCleanupCommand.RaiseCanExecuteChanged(); ExportJsonCommand.RaiseCanExecuteChanged(); ExportHtmlCommand.RaiseCanExecuteChanged();
+        StartScanCommand.RaiseCanExecuteChanged(); CancelScanCommand.RaiseCanExecuteChanged(); LoadLastReportCommand.RaiseCanExecuteChanged(); SelectSuggestedCommand.RaiseCanExecuteChanged(); SelectAllCommand.RaiseCanExecuteChanged(); SelectSoftwareCommand.RaiseCanExecuteChanged(); ClearSelectionCommand.RaiseCanExecuteChanged(); ExecuteCleanupCommand.RaiseCanExecuteChanged(); StopCleanupCommand.RaiseCanExecuteChanged(); ExportJsonCommand.RaiseCanExecuteChanged(); ExportHtmlCommand.RaiseCanExecuteChanged();
     }
     private static bool IsAdministrator()
     {
