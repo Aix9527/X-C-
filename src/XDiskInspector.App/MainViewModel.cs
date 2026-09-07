@@ -21,6 +21,8 @@ public sealed class MainViewModel : ObservableObject
     private readonly CleanupPreviewService _previewService;
     private readonly PersistedReportRevalidationService _persistedRevalidationService;
     private readonly CleanupExecutor _cleanupExecutor;
+    private readonly ResponsiveCleanupExecutor _responsiveCleanupExecutor;
+    private readonly ElevatedCleanupBridge _elevatedCleanupBridge = new();
     private readonly JsonReportWriter _jsonWriter = new();
     private readonly HtmlReportWriter _htmlWriter = new();
     private CancellationTokenSource? _scanCts;
@@ -47,6 +49,10 @@ public sealed class MainViewModel : ObservableObject
     private string _recommendationFilter = "全部";
     private string _softwareFilter = string.Empty;
     private string _selectedSoftwareCategory = "全部软件";
+    private double _cleanupProgressPercent;
+    private string _cleanupProgressText = "尚未开始清理";
+    private string _cleanupCurrentItemText = "—";
+    private bool _cleanupProgressIndeterminate;
 
     public MainViewModel()
     {
@@ -57,6 +63,7 @@ public sealed class MainViewModel : ObservableObject
         _previewService = new CleanupPreviewService(_matcher, _pathPolicy);
         _persistedRevalidationService = new PersistedReportRevalidationService(_matcher, _pathPolicy);
         _cleanupExecutor = new CleanupExecutor(_matcher, _pathPolicy);
+        _responsiveCleanupExecutor = new ResponsiveCleanupExecutor(_cleanupExecutor);
 
         CandidateView = CollectionViewSource.GetDefaultView(CleanupItems);
         CandidateView.Filter = CandidateFilter;
@@ -194,6 +201,10 @@ public sealed class MainViewModel : ObservableObject
     {
         RiskLevel.Low => "低", RiskLevel.Medium => "中", RiskLevel.High => "高", RiskLevel.Critical => "严重", _ => "无"
     };
+    public double CleanupProgressPercent { get => _cleanupProgressPercent; private set => SetProperty(ref _cleanupProgressPercent, Math.Clamp(value, 0d, 100d)); }
+    public string CleanupProgressText { get => _cleanupProgressText; private set => SetProperty(ref _cleanupProgressText, value); }
+    public string CleanupCurrentItemText { get => _cleanupCurrentItemText; private set => SetProperty(ref _cleanupCurrentItemText, value); }
+    public bool CleanupProgressIndeterminate { get => _cleanupProgressIndeterminate; private set => SetProperty(ref _cleanupProgressIndeterminate, value); }
 
     private string LastReportPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XDiskInspector", "last-report.json");
 
@@ -249,6 +260,7 @@ public sealed class MainViewModel : ObservableObject
         GuidanceItems.ReplaceAll(report.HighlightedItems.Where(x => x.Recommendation == CleanupRecommendation.GuidanceOnly));
         CleanupResults.ReplaceAll([]);
         RefreshSoftwareCategories();
+        ResetCleanupProgress();
         RaiseSelectionSummary();
     }
 
@@ -257,6 +269,7 @@ public sealed class MainViewModel : ObservableObject
         foreach (var item in CleanupItems) item.PropertyChanged -= CleanupItemOnPropertyChanged;
         MainOccupancies.ReplaceAll([]); HighlightedItems.ReplaceAll([]); LargeFiles.ReplaceAll([]); CleanupItems.ReplaceAll([]); GuidanceItems.ReplaceAll([]); CleanupResults.ReplaceAll([]);
         SoftwareCategories.ReplaceAll(["全部软件"]); SelectedSoftwareCategory = "全部软件";
+        ResetCleanupProgress();
         RaiseSelectionSummary();
     }
 
@@ -293,10 +306,59 @@ public sealed class MainViewModel : ObservableObject
         if (preview.Candidates.Count == 0) { MessageBox.Show("没有通过最终安全复核的已选项目。", "安全清理", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         var dialog = new CleanupConfirmationWindow(preview) { Owner = Application.Current.MainWindow };
         if (dialog.ShowDialog() != true || !dialog.Confirmed) return;
-        _cleanupCts?.Dispose(); _cleanupCts = new CancellationTokenSource(); IsCleanupRunning = true; CleanupResults.ReplaceAll([]);
+
+        _cleanupCts?.Dispose();
+        _cleanupCts = new CancellationTokenSource();
+        IsCleanupRunning = true;
+        CleanupResults.ReplaceAll([]);
+        CleanupProgressPercent = 0;
+        CleanupProgressIndeterminate = false;
+        CleanupProgressText = $"准备清理 0/{preview.Candidates.Count} 项";
+        CleanupCurrentItemText = "正在准备…";
+
+        var options = new CleanupExecutionOptions(dialog.AllowRecycleBinIrreversible);
+        var progress = new Progress<CleanupProgress>(OnCleanupProgress);
+
         try
         {
-            var result = await _cleanupExecutor.ExecuteAsync(preview, new CleanupExecutionOptions(dialog.AllowRecycleBinIrreversible), _cleanupCts.Token);
+            var responsiveResult = await _responsiveCleanupExecutor.ExecuteAsync(preview, options, _cleanupCts.Token, progress);
+            var result = responsiveResult.RunResult;
+
+            if (responsiveResult.RequiresElevation.Count > 0 && !_cleanupCts.IsCancellationRequested)
+            {
+                var answer = MessageBox.Show(
+                    $"有 {responsiveResult.RequiresElevation.Count} 个项目因权限不足未删除。\n\n是否现在获取管理员权限（UAC）并仅重试这些项目？\n\n管理员模式仍会重新检查当前规则、路径、文件状态和保留时间。",
+                    "需要管理员权限",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Shield);
+
+                if (answer == MessageBoxResult.Yes)
+                {
+                    CleanupProgressIndeterminate = true;
+                    CleanupProgressText = "正在请求管理员权限…";
+                    CleanupCurrentItemText = "等待 Windows UAC 确认";
+
+                    var elevated = await _elevatedCleanupBridge.RunAsync(responsiveResult.RequiresElevation, options, progress);
+                    CleanupProgressIndeterminate = false;
+
+                    if (elevated.Result is not null)
+                    {
+                        var elevatedPaths = responsiveResult.RequiresElevation
+                            .Select(x => x.Path)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                        result.Items.RemoveAll(x =>
+                            elevatedPaths.Contains(x.Path) &&
+                            x.Status == CleanupItemStatus.Failed &&
+                            x.Message.StartsWith("权限不足", StringComparison.OrdinalIgnoreCase));
+                        result.Items.AddRange(elevated.Result.Items);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(elevated.Error))
+                    {
+                        MessageBox.Show(elevated.Error, "管理员清理未执行", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+            }
+
             CleanupResults.ReplaceAll(result.Items);
             MutateSelection(() =>
             {
@@ -306,11 +368,52 @@ public sealed class MainViewModel : ObservableObject
                     if (source is not null) source.Selected = false;
                 }
             });
+
+            if (!result.Stopped)
+            {
+                CleanupProgressPercent = 100;
+                CleanupProgressText = $"清理完成 · 成功 {result.DeletedCount} · 跳过 {result.SkippedCount} · 失败 {result.FailedCount}";
+                CleanupCurrentItemText = "全部已处理";
+            }
+            else
+            {
+                CleanupProgressText = $"已停止后续项目 · 当前已处理 {result.Items.Count} 项";
+                CleanupCurrentItemText = "停止只影响后续项目；当前单项操作不会被强制中断";
+            }
+
             var restart = result.RestartRequiredCount > 0 ? $"\n需要重启：{result.RestartRequiredCount} 项。" : "\n需要重启：0 项。";
             var stopped = result.Stopped ? "\n用户已停止后续项目。" : string.Empty;
             MessageBox.Show($"清理完成：成功 {result.DeletedCount}，跳过 {result.SkippedCount}，失败 {result.FailedCount}。\n实际释放：{ByteFormatter.Format(result.ActualFreedBytes)}{restart}{stopped}", "安全清理结果", MessageBoxButton.OK, result.FailedCount > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
-        finally { IsCleanupRunning = false; }
+        catch (Exception ex)
+        {
+            CleanupProgressIndeterminate = false;
+            CleanupProgressText = "清理过程发生错误";
+            CleanupCurrentItemText = ex.Message;
+            MessageBox.Show($"清理过程未正常完成：{ex.Message}", "安全清理", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            IsCleanupRunning = false;
+        }
+    }
+
+    private void OnCleanupProgress(CleanupProgress progress)
+    {
+        CleanupProgressIndeterminate = false;
+        CleanupProgressPercent = progress.Percent;
+        CleanupProgressText = $"已处理 {progress.CompletedCount}/{progress.TotalCount} 项 · {ByteFormatter.Format(progress.EstimatedCompletedBytes)} / {ByteFormatter.Format(progress.EstimatedTotalBytes)} · {progress.Percent:0.0}%";
+        CleanupCurrentItemText = progress.IsCurrentItemActive
+            ? $"正在删除：{progress.CurrentPath}"
+            : $"已处理：{progress.CurrentPath}";
+    }
+
+    private void ResetCleanupProgress()
+    {
+        CleanupProgressPercent = 0;
+        CleanupProgressIndeterminate = false;
+        CleanupProgressText = "尚未开始清理";
+        CleanupCurrentItemText = "—";
     }
 
     private async Task ExportJsonAsync()
