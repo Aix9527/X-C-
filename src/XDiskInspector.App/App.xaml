@@ -5,7 +5,6 @@
              StartupUri="MainWindow.xaml">
   <Application.Resources>
     <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
-    <local:RecoveryTextConverter x:Key="RecoveryTextConverter" />
     <SolidColorBrush x:Key="BgBrush" Color="#0E1216" />
     <SolidColorBrush x:Key="PanelBrush" Color="#161C21" />
     <SolidColorBrush x:Key="Panel2Brush" Color="#1C242A" />
