@@ -11,7 +11,7 @@ function Invoke-DotNetCommand {
     Write-Host "dotnet $($Arguments -join ' ')"
     & dotnet @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "dotnet command failed with exit code $LASTEXITCODE: dotnet $($Arguments -join ' ')"
+        throw "dotnet command failed with exit code $($LASTEXITCODE): dotnet $($Arguments -join ' ')"
     }
 }
 

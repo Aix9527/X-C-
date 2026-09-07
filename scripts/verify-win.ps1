@@ -11,7 +11,7 @@ function Invoke-DotNetCommand {
     Write-Host "dotnet $($Arguments -join ' ')"
     & dotnet @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "dotnet command failed with exit code $LASTEXITCODE: dotnet $($Arguments -join ' ')"
+        throw "dotnet command failed with exit code $($LASTEXITCODE): dotnet $($Arguments -join ' ')"
     }
 }
 
@@ -21,7 +21,7 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
 
 $sdks = @(& dotnet --list-sdks)
 if ($LASTEXITCODE -ne 0) {
-    throw "dotnet --list-sdks failed with exit code $LASTEXITCODE."
+    throw "dotnet --list-sdks failed with exit code $($LASTEXITCODE)."
 }
 if (-not ($sdks | Where-Object { $_ -match '^10\.' })) {
     throw "A .NET 10 SDK is required. Installed SDKs: $($sdks -join '; ')"
