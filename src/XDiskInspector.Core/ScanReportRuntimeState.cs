@@ -4,7 +4,7 @@ namespace XDiskInspector.Core;
 
 public static class ScanReportRuntimeState
 {
-    private sealed class Marker;
+    private sealed class Marker { }
     private static readonly ConditionalWeakTable<ScanReport, Marker> PersistedReports = new();
 
     public static void MarkPersisted(ScanReport report)
