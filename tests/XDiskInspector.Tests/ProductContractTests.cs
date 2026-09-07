@@ -69,6 +69,22 @@ public sealed class ProductContractTests
         Assert.Contains("无法再从回收站恢复", recycle.RecoveryText);
     }
 
+    [Fact]
+    public void Cleanup_results_report_how_many_items_require_restart()
+    {
+        var run = new CleanupRunResult
+        {
+            Items =
+            [
+                new CleanupItemResult("a", CleanupItemStatus.Deleted, 10, "ok"),
+                new CleanupItemResult("b", CleanupItemStatus.Deleted, 20, "ok", RequiresRestart: true),
+                new CleanupItemResult("c", CleanupItemStatus.Skipped, 0, "skip", RequiresRestart: true)
+            ]
+        };
+
+        Assert.Equal(2, run.RestartRequiredCount);
+    }
+
     private static ScanItem Item(string path, bool selectable, string? ruleId, CleanupRecommendation recommendation, RiskLevel risk)
         => new()
         {
