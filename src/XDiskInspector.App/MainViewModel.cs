@@ -194,7 +194,7 @@ public sealed class MainViewModel : ObservableObject
     }
 
     private void CleanupItemOnPropertyChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName == nameof(ScanItem.Selected)) RaiseSelectionSummary(); }
-    private void SelectSuggested() { foreach (var item in CandidateView.Cast<ScanItem>()) if (item.Selectable && item.Recommendation == CleanupRecommendation.Suggested && item.RiskLevel <= RiskLevel.Medium) item.Selected = true; RaiseSelectionSummary(); }
+    private void SelectSuggested() { SelectionPolicy.SelectSuggested(CandidateView.Cast<ScanItem>()); RaiseSelectionSummary(); }
     private void ClearSelection() { foreach (var item in CleanupItems) item.Selected = false; RaiseSelectionSummary(); }
 
     private async Task ExecuteCleanupAsync()
