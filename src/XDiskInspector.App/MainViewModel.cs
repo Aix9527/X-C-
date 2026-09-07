@@ -83,6 +83,7 @@ public sealed class MainViewModel : ObservableObject
         ClearSelectionCommand = new RelayCommand(_ => ClearSelection(), _ => IsSelectionEditable);
         ExecuteCleanupCommand = new AsyncRelayCommand(_ => ExecuteCleanupAsync(), _ => CanExecuteCleanup);
         StopCleanupCommand = new RelayCommand(_ => _cleanupCts?.Cancel(), _ => IsCleanupRunning);
+        RefreshCandidatesCommand = new RelayCommand(_ => RefreshCandidates(), _ => CanRefreshCandidates);
         ExportJsonCommand = new AsyncRelayCommand(_ => ExportJsonAsync(), _ => CurrentReport is not null);
         ExportHtmlCommand = new AsyncRelayCommand(_ => ExportHtmlAsync(), _ => CurrentReport is not null);
         RunOptimizationActionCommand = new RelayCommand(RunOptimizationAction);
@@ -118,6 +119,7 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand ClearSelectionCommand { get; }
     public AsyncRelayCommand ExecuteCleanupCommand { get; }
     public RelayCommand StopCleanupCommand { get; }
+    public RelayCommand RefreshCandidatesCommand { get; }
     public AsyncRelayCommand ExportJsonCommand { get; }
     public AsyncRelayCommand ExportHtmlCommand { get; }
     public RelayCommand RunOptimizationActionCommand { get; }
@@ -165,6 +167,7 @@ public sealed class MainViewModel : ObservableObject
     public bool IsCurrentReportRuleVersion => CurrentReport is not null && string.Equals(CurrentReport.RuleVersion, _matcher.RuleVersion, StringComparison.Ordinal);
     public bool IsPersistedReport => ScanReportRuntimeState.IsPersisted(CurrentReport);
     public bool CanExecuteCleanup => CurrentReport?.IsComplete == true && (IsPersistedReport || IsCurrentReportRuleVersion) && SelectedCount > 0 && !IsScanning && !IsCleanupRunning;
+    public bool CanRefreshCandidates => CurrentReport is not null && !IsScanning && !IsCleanupRunning;
     public string ScanStatus { get => _scanStatus; private set => SetProperty(ref _scanStatus, value); }
     public string CurrentPath { get => _currentPath; private set => SetProperty(ref _currentPath, value); }
     public string FileCountText { get => _fileCountText; private set => SetProperty(ref _fileCountText, value); }
@@ -288,6 +291,27 @@ public sealed class MainViewModel : ObservableObject
     });
     private void ClearSelection() => MutateSelection(() => { foreach (var item in CleanupItems) item.Selected = false; });
 
+    private void RefreshCandidates()
+    {
+        if (CurrentReport is null) return;
+        var removed = 0;
+        MutateSelection(() =>
+        {
+            for (var i = CleanupItems.Count - 1; i >= 0; i--)
+            {
+                var item = CleanupItems[i];
+                if (!CandidateFreshness.IsPresent(item.Path, item.Kind))
+                {
+                    CleanupItems.RemoveAt(i);
+                    removed++;
+                }
+            }
+        });
+        RefreshSoftwareCategories();
+        if (removed > 0)
+            ScanStatus = $"已刷新候选列表，移除 {removed} 个磁盘上已不存在的项目";
+    }
+
     private void MutateSelection(Action action)
     {
         _suspendSelectionSummary = true;
@@ -361,12 +385,18 @@ public sealed class MainViewModel : ObservableObject
             }
 
             CleanupResults.ReplaceAll(result.Items);
+            var deletedPaths = result.Items
+                .Where(x => x.Status == CleanupItemStatus.Deleted)
+                .Select(x => x.Path)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             MutateSelection(() =>
             {
-                foreach (var deleted in result.Items.Where(x => x.Status == CleanupItemStatus.Deleted))
+                // Drop successfully deleted candidates from the pool so the list reflects disk state
+                // without requiring a full rescan (Issue #12).
+                for (var i = CleanupItems.Count - 1; i >= 0; i--)
                 {
-                    var source = CleanupItems.FirstOrDefault(x => string.Equals(x.Path, deleted.Path, StringComparison.OrdinalIgnoreCase));
-                    if (source is not null) source.Selected = false;
+                    var source = CleanupItems[i];
+                    if (deletedPaths.Contains(source.Path)) CleanupItems.RemoveAt(i);
                 }
             });
 
@@ -494,12 +524,12 @@ public sealed class MainViewModel : ObservableObject
         _selectedCount = count;
         _selectedBytes = bytes;
         _highestSelectedRisk = highest;
-        Raise(nameof(SelectedCount)); Raise(nameof(SelectedBytesText)); Raise(nameof(HighestSelectedRiskText)); Raise(nameof(CanExecuteCleanup)); ExecuteCleanupCommand.RaiseCanExecuteChanged();
+        Raise(nameof(SelectedCount)); Raise(nameof(SelectedBytesText)); Raise(nameof(HighestSelectedRiskText)); Raise(nameof(CanExecuteCleanup)); Raise(nameof(CanRefreshCandidates)); ExecuteCleanupCommand.RaiseCanExecuteChanged(); RefreshCandidatesCommand.RaiseCanExecuteChanged();
     }
 
     private void RaiseCommandStates()
     {
-        StartScanCommand.RaiseCanExecuteChanged(); CancelScanCommand.RaiseCanExecuteChanged(); LoadLastReportCommand.RaiseCanExecuteChanged(); SelectSuggestedCommand.RaiseCanExecuteChanged(); SelectAllCommand.RaiseCanExecuteChanged(); SelectSoftwareCommand.RaiseCanExecuteChanged(); ClearSelectionCommand.RaiseCanExecuteChanged(); ExecuteCleanupCommand.RaiseCanExecuteChanged(); StopCleanupCommand.RaiseCanExecuteChanged(); ExportJsonCommand.RaiseCanExecuteChanged(); ExportHtmlCommand.RaiseCanExecuteChanged();
+        StartScanCommand.RaiseCanExecuteChanged(); CancelScanCommand.RaiseCanExecuteChanged(); LoadLastReportCommand.RaiseCanExecuteChanged(); SelectSuggestedCommand.RaiseCanExecuteChanged(); SelectAllCommand.RaiseCanExecuteChanged(); SelectSoftwareCommand.RaiseCanExecuteChanged(); ClearSelectionCommand.RaiseCanExecuteChanged(); ExecuteCleanupCommand.RaiseCanExecuteChanged(); StopCleanupCommand.RaiseCanExecuteChanged(); RefreshCandidatesCommand.RaiseCanExecuteChanged(); ExportJsonCommand.RaiseCanExecuteChanged(); ExportHtmlCommand.RaiseCanExecuteChanged();
     }
     private static bool IsAdministrator()
     {
