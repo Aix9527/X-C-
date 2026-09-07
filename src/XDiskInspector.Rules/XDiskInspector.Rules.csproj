@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\XDiskInspector.Core\XDiskInspector.Core.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="directory-rules.json" /></ItemGroup>
+</Project>

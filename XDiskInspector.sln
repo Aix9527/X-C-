@@ -1,0 +1,48 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XDiskInspector.Core", "src\XDiskInspector.Core\XDiskInspector.Core.csproj", "{D4B8FC02-7C71-4A35-AE8E-7B7E42CB7A01}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XDiskInspector.Rules", "src\XDiskInspector.Rules\XDiskInspector.Rules.csproj", "{8C638792-1A21-48DA-B822-15E15C0E8B02}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XDiskInspector.Cleanup", "src\XDiskInspector.Cleanup\XDiskInspector.Cleanup.csproj", "{1D4A1985-82FD-4955-882B-E80142F13C03}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XDiskInspector.Reporting", "src\XDiskInspector.Reporting\XDiskInspector.Reporting.csproj", "{B8F6A144-A113-4CC4-9F21-B0829946C904}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XDiskInspector.App", "src\XDiskInspector.App\XDiskInspector.App.csproj", "{9E840D3D-E32C-4B59-BC71-EB55C3D5D005}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XDiskInspector.Tests", "tests\XDiskInspector.Tests\XDiskInspector.Tests.csproj", "{2FF5CF17-B03F-4E1E-9B8B-E78EFAB57206}"
+EndProject
+Global
+  GlobalSection(SolutionConfigurationPlatforms) = preSolution
+    Debug|Any CPU = Debug|Any CPU
+    Release|Any CPU = Release|Any CPU
+  EndGlobalSection
+  GlobalSection(ProjectConfigurationPlatforms) = postSolution
+    {D4B8FC02-7C71-4A35-AE8E-7B7E42CB7A01}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {D4B8FC02-7C71-4A35-AE8E-7B7E42CB7A01}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {D4B8FC02-7C71-4A35-AE8E-7B7E42CB7A01}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {D4B8FC02-7C71-4A35-AE8E-7B7E42CB7A01}.Release|Any CPU.Build.0 = Release|Any CPU
+    {8C638792-1A21-48DA-B822-15E15C0E8B02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {8C638792-1A21-48DA-B822-15E15C0E8B02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {8C638792-1A21-48DA-B822-15E15C0E8B02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {8C638792-1A21-48DA-B822-15E15C0E8B02}.Release|Any CPU.Build.0 = Release|Any CPU
+    {1D4A1985-82FD-4955-882B-E80142F13C03}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {1D4A1985-82FD-4955-882B-E80142F13C03}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {1D4A1985-82FD-4955-882B-E80142F13C03}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {1D4A1985-82FD-4955-882B-E80142F13C03}.Release|Any CPU.Build.0 = Release|Any CPU
+    {B8F6A144-A113-4CC4-9F21-B0829946C904}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {B8F6A144-A113-4CC4-9F21-B0829946C904}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {B8F6A144-A113-4CC4-9F21-B0829946C904}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {B8F6A144-A113-4CC4-9F21-B0829946C904}.Release|Any CPU.Build.0 = Release|Any CPU
+    {9E840D3D-E32C-4B59-BC71-EB55C3D5D005}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {9E840D3D-E32C-4B59-BC71-EB55C3D5D005}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {9E840D3D-E32C-4B59-BC71-EB55C3D5D005}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {9E840D3D-E32C-4B59-BC71-EB55C3D5D005}.Release|Any CPU.Build.0 = Release|Any CPU
+    {2FF5CF17-B03F-4E1E-9B8B-E78EFAB57206}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {2FF5CF17-B03F-4E1E-9B8B-E78EFAB57206}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {2FF5CF17-B03F-4E1E-9B8B-E78EFAB57206}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {2FF5CF17-B03F-4E1E-9B8B-E78EFAB57206}.Release|Any CPU.Build.0 = Release|Any CPU
+  EndGlobalSection
+EndGlobal

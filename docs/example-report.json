@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "author": "Aix",
+    "douyin": "xch03209527",
+    "gitHub": "Aix9527/Codex-Doctor"
+  },
+  "report": {
+    "timestampUtc": "2026-09-07T00:00:00Z",
+    "applicationVersion": "1.0.0",
+    "ruleVersion": "2026.09.07.3",
+    "isAdministrator": false,
+    "isComplete": true,
+    "rootPath": "C:\\",
+    "diskTotalBytes": 1000000000000,
+    "diskUsedBytes": 650000000000,
+    "diskFreeBytes": 350000000000,
+    "accessibleLogicalBytes": 430000000000,
+    "fileCount": 123456,
+    "mainOccupancies": [],
+    "highlightedItems": [],
+    "cleanupCandidates": [],
+    "largeFiles": [],
+    "accessIssues": []
+  }
+}

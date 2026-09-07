@@ -1,0 +1,14 @@
+# .NET build and publish outputs
+**/bin/
+**/obj/
+artifacts/
+
+# Local IDE and user settings
+.vs/
+*.user
+*.suo
+
+# Test results and coverage
+TestResults/
+*.trx
+coverage/
