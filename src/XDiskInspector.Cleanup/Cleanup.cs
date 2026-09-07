@@ -76,6 +76,14 @@ public sealed class SafePathPolicy
                 return PathSafetyResult.Blocked("重解析点目标禁止自动清理", full);
             if (Directory.Exists(full) && new DirectoryInfo(full).Attributes.HasFlag(FileAttributes.ReparsePoint))
                 return PathSafetyResult.Blocked("重解析点目标禁止自动清理", full);
+
+            var ancestor = Directory.Exists(full) ? new DirectoryInfo(full).Parent : new FileInfo(full).Directory;
+            while (ancestor is not null)
+            {
+                if (ancestor.Exists && ancestor.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    return PathSafetyResult.Blocked("路径包含重解析点祖先，禁止自动清理", full);
+                ancestor = ancestor.Parent;
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -191,15 +199,15 @@ public sealed class CleanupPreviewService
 
             valid.Add(new CleanupCandidate(
                 safety.NormalizedPath,
-                item.CleanupRuleId,
+                current.RuleId,
                 _matcher.RuleVersion,
                 item.SizeBytes,
                 item.LastWriteTimeUtc,
-                item.CleanupKind,
-                item.MinAgeDays,
-                item.RiskLevel,
-                item.Consequence ?? "未知后果",
-                item.Irreversible));
+                current.CleanupKind,
+                current.MinAgeDays,
+                current.RiskLevel,
+                current.Consequence,
+                current.Irreversible));
         }
 
         foreach (var candidate in Deduplicate(valid)) preview.Candidates.Add(candidate);
@@ -307,13 +315,19 @@ public sealed class CleanupExecutor
         if (rule is null || !rule.AllowCleanup || classification is null || !string.Equals(classification.RuleId, candidate.RuleId, StringComparison.Ordinal))
             return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, "允许列表复核失败。");
 
+        if (classification.CleanupKind != candidate.CleanupKind ||
+            classification.MinAgeDays != candidate.MinAgeDays ||
+            classification.Irreversible != candidate.Irreversible ||
+            classification.RiskLevel != candidate.RiskLevel)
+            return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, "清理规则属性与当前规则库不一致，已拒绝执行。");
+
         var safety = _pathPolicy.Validate(candidate.Path);
         if (!safety.IsSafe || safety.NormalizedPath is null)
             return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, safety.Reason ?? "路径安全复核失败。");
 
-        if (candidate.CleanupKind == CleanupKind.RecycleBin)
+        if (classification.CleanupKind == CleanupKind.RecycleBin)
         {
-            if (!options.AllowRecycleBinIrreversible)
+            if (!classification.Irreversible || !options.AllowRecycleBinIrreversible)
                 return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, "未勾选“我理解回收站清空后无法恢复”。");
             var recycleResult = await _recycleBinService.EmptyAsync();
             return recycleResult.Success
@@ -321,7 +335,7 @@ public sealed class CleanupExecutor
                 : new CleanupItemResult(candidate.Path, CleanupItemStatus.Failed, 0, recycleResult.Error ?? "回收站清理失败。");
         }
 
-        if (candidate.CleanupKind != CleanupKind.File)
+        if (classification.CleanupKind != CleanupKind.File)
             return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, "当前版本不直接删除该类型目标。");
 
         try
@@ -336,8 +350,8 @@ public sealed class CleanupExecutor
             if (candidate.ScannedLastWriteTimeUtc.HasValue && Math.Abs((currentLastWrite - candidate.ScannedLastWriteTimeUtc.Value).TotalSeconds) > 2)
                 return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, "文件在扫描后发生变化。");
 
-            if (candidate.MinAgeDays.HasValue && currentLastWrite > DateTime.UtcNow.AddDays(-candidate.MinAgeDays.Value))
-                return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, $"文件未达到 {candidate.MinAgeDays.Value} 天最小保留时间。");
+            if (classification.MinAgeDays.HasValue && currentLastWrite > DateTime.UtcNow.AddDays(-classification.MinAgeDays.Value))
+                return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, $"文件未达到 {classification.MinAgeDays.Value} 天最小保留时间。");
 
             var before = new FileInfo(candidate.Path).Length;
             File.Delete(candidate.Path);
