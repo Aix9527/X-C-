@@ -171,7 +171,7 @@ public sealed class MainViewModel : ObservableObject
             ScanStatus = report.IsComplete ? "已载入上次完整报告" : "已载入上次不完整报告（批量清理已禁用）";
             SelectedPageIndex = 1;
         }
-        catch (Exception ex) { MessageBox.Show($"无法载入上次报告：{ex.Message}", "X C盘巡检官", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { MessageBox.Show($"无法载入上次报告：{ex.Message}", "载入上次报告", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
     private void ApplyReport(ScanReport report)
@@ -183,7 +183,7 @@ public sealed class MainViewModel : ObservableObject
         foreach (var item in report.HighlightedItems) HighlightedItems.Add(item);
         foreach (var item in report.LargeFiles) LargeFiles.Add(item);
         foreach (var item in report.CleanupCandidates) { item.PropertyChanged += CleanupItemOnPropertyChanged; CleanupItems.Add(item); }
-        foreach (var item in report.HighlightedItems.Where(x => !x.Selectable)) GuidanceItems.Add(item);
+        foreach (var item in report.HighlightedItems.Where(x => x.Recommendation == CleanupRecommendation.GuidanceOnly)) GuidanceItems.Add(item);
         RefreshFilters(); RaiseSelectionSummary();
     }
 
