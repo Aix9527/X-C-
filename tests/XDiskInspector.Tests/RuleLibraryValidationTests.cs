@@ -8,8 +8,8 @@ public sealed class RuleLibraryValidationTests
     [Fact]
     public void Duplicate_rule_ids_are_rejected()
     {
-        var first = Rule("duplicate", allowCleanup: false, CleanupKind.None);
-        var second = Rule("duplicate", allowCleanup: true, CleanupKind.File);
+        var first = Rule("duplicate", allowCleanup: false, cleanupKind: CleanupKind.None);
+        var second = Rule("duplicate", allowCleanup: true, cleanupKind: CleanupKind.File);
 
         var ex = Assert.Throws<InvalidDataException>(() => new RuleLibrary("test", [first, second]));
 
@@ -20,16 +20,16 @@ public sealed class RuleLibraryValidationTests
     public void Cleanup_permission_and_cleanup_kind_must_be_consistent()
     {
         Assert.Throws<InvalidDataException>(() =>
-            new RuleLibrary("test", [Rule("allowed-none", allowCleanup: true, CleanupKind.None)]));
+            new RuleLibrary("test", [Rule("allowed-none", allowCleanup: true, cleanupKind: CleanupKind.None)]));
 
         Assert.Throws<InvalidDataException>(() =>
-            new RuleLibrary("test", [Rule("blocked-file", allowCleanup: false, CleanupKind.File)]));
+            new RuleLibrary("test", [Rule("blocked-file", allowCleanup: false, cleanupKind: CleanupKind.File)]));
     }
 
     [Fact]
     public void Negative_minimum_age_is_rejected()
     {
-        var rule = Rule("negative-age", allowCleanup: true, CleanupKind.File) with { MinAgeDays = -1 };
+        var rule = Rule("negative-age", allowCleanup: true, cleanupKind: CleanupKind.File) with { MinAgeDays = -1 };
 
         Assert.Throws<InvalidDataException>(() => new RuleLibrary("test", [rule]));
     }
