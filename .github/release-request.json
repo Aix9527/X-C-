@@ -1,7 +1,7 @@
 {
-  "tag": "v1.0.0-pr2-f510b05",
-  "target_ref": "f510b05aaeca4498915d4eaf9f14e5f0d067d7b3",
+  "tag": "v1.0.0-pr2-f510b05-hotfix1",
+  "target_ref": "b22e0c394ef6b782953470c238ad22fe493211d2",
   "prerelease": true,
   "attempt": 1,
-  "reason": "Backfill the final PR #2 feature head with cleanup progress, responsive large-file deletion, and on-demand UAC retry."
+  "reason": "Publish the f510b05 feature line after fixing the missing System.IO import caught by self-hosted Windows verification."
 }
