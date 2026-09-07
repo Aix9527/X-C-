@@ -307,6 +307,7 @@ public sealed class MainViewModel : ObservableObject
         var dialog = new CleanupConfirmationWindow(preview) { Owner = Application.Current.MainWindow };
         if (dialog.ShowDialog() != true || !dialog.Confirmed) return;
 
+        SelectedPageIndex = 2;
         _cleanupCts?.Dispose();
         _cleanupCts = new CancellationTokenSource();
         IsCleanupRunning = true;
@@ -330,7 +331,7 @@ public sealed class MainViewModel : ObservableObject
                     $"有 {responsiveResult.RequiresElevation.Count} 个项目因权限不足未删除。\n\n是否现在获取管理员权限（UAC）并仅重试这些项目？\n\n管理员模式仍会重新检查当前规则、路径、文件状态和保留时间。",
                     "需要管理员权限",
                     MessageBoxButton.YesNo,
-                    MessageBoxImage.Shield);
+                    MessageBoxImage.Warning);
 
                 if (answer == MessageBoxResult.Yes)
                 {
