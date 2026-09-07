@@ -260,8 +260,9 @@ public sealed class MainViewModel : ObservableObject
             foreach (var item in result.Items) CleanupResults.Add(item);
             foreach (var deleted in result.Items.Where(x => x.Status == CleanupItemStatus.Deleted)) { var source = CleanupItems.FirstOrDefault(x => string.Equals(x.Path, deleted.Path, StringComparison.OrdinalIgnoreCase)); if (source is not null) source.Selected = false; }
             RaiseSelectionSummary();
+            var restart = result.RestartRequiredCount > 0 ? $"\n需要重启：{result.RestartRequiredCount} 项。" : "\n需要重启：0 项。";
             var stopped = result.Stopped ? "\n用户已停止后续项目。" : string.Empty;
-            MessageBox.Show($"清理完成：成功 {result.DeletedCount}，跳过 {result.SkippedCount}，失败 {result.FailedCount}。\n实际释放：{ByteFormatter.Format(result.ActualFreedBytes)}{stopped}", "安全清理结果", MessageBoxButton.OK, result.FailedCount > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            MessageBox.Show($"清理完成：成功 {result.DeletedCount}，跳过 {result.SkippedCount}，失败 {result.FailedCount}。\n实际释放：{ByteFormatter.Format(result.ActualFreedBytes)}{restart}{stopped}", "安全清理结果", MessageBoxButton.OK, result.FailedCount > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         finally { IsCleanupRunning = false; }
     }
