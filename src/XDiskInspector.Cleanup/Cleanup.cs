@@ -171,6 +171,12 @@ public sealed class CleanupPreviewService
             return preview;
         }
 
+        if (ScanReportRuntimeState.IsPersisted(report))
+        {
+            preview.Errors.Add("从磁盘载入的历史报告仅供查看，不能作为清理权限来源。请重新扫描当前机器后再清理。");
+            return preview;
+        }
+
         if (!string.Equals(report.RuleVersion, _matcher.RuleVersion, StringComparison.Ordinal))
         {
             preview.Errors.Add("扫描使用的规则版本已变化，请重新扫描后再清理。");
