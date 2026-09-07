@@ -258,7 +258,7 @@ public sealed record CleanupExecutionOptions(bool AllowRecycleBinIrreversible = 
 
 public interface IRecycleBinService
 {
-    Task<(bool Success, string? Error)> EmptyAsync();
+    Task<(bool Success, string? Error)> EmptyAsync(string rootPath);
 }
 
 public sealed class ShellRecycleBinService : IRecycleBinService
@@ -270,11 +270,28 @@ public sealed class ShellRecycleBinService : IRecycleBinService
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SHEmptyRecycleBin(nint hwnd, string? pszRootPath, uint dwFlags);
 
-    public Task<(bool Success, string? Error)> EmptyAsync()
+    public Task<(bool Success, string? Error)> EmptyAsync(string rootPath)
     {
         if (!OperatingSystem.IsWindows()) return Task.FromResult<(bool, string?)>((false, "仅支持 Windows 回收站。"));
-        var result = SHEmptyRecycleBin(0, null, NoConfirmation | NoProgressUi | NoSound);
-        return Task.FromResult(result == 0 ? (true, (string?)null) : (false, $"SHEmptyRecycleBin 返回错误码 0x{result:X8}"));
+        if (string.IsNullOrWhiteSpace(rootPath)) return Task.FromResult<(bool, string?)>((false, "拒绝空回收站驱动器路径。"));
+
+        string normalizedRoot;
+        try
+        {
+            normalizedRoot = Path.GetPathRoot(Path.GetFullPath(rootPath)) ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult<(bool, string?)>((false, $"无法解析回收站驱动器路径：{ex.Message}"));
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedRoot))
+            return Task.FromResult<(bool, string?)>((false, "无法确定回收站所在驱动器。"));
+
+        var result = SHEmptyRecycleBin(0, normalizedRoot, NoConfirmation | NoProgressUi | NoSound);
+        return Task.FromResult(result == 0
+            ? (true, (string?)null)
+            : (false, $"SHEmptyRecycleBin 返回错误码 0x{result:X8}"));
     }
 }
 
@@ -338,10 +355,24 @@ public sealed class CleanupExecutor
         {
             if (!classification.Irreversible || !options.AllowRecycleBinIrreversible)
                 return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, "未勾选“我理解回收站清空后无法恢复”。");
-            var recycleResult = await _recycleBinService.EmptyAsync();
-            return recycleResult.Success
-                ? new CleanupItemResult(candidate.Path, CleanupItemStatus.Deleted, candidate.EstimatedSizeBytes, "回收站已清空。")
-                : new CleanupItemResult(candidate.Path, CleanupItemStatus.Failed, 0, recycleResult.Error ?? "回收站清理失败。");
+
+            var recycleRoot = Path.GetPathRoot(safety.NormalizedPath);
+            if (string.IsNullOrWhiteSpace(recycleRoot))
+                return new CleanupItemResult(candidate.Path, CleanupItemStatus.Skipped, 0, "无法确定回收站所在驱动器，已拒绝执行。");
+
+            var beforeFree = TryGetAvailableFreeSpace(recycleRoot);
+            var recycleResult = await _recycleBinService.EmptyAsync(recycleRoot);
+            if (!recycleResult.Success)
+                return new CleanupItemResult(candidate.Path, CleanupItemStatus.Failed, 0, recycleResult.Error ?? "回收站清理失败。");
+
+            var afterFree = TryGetAvailableFreeSpace(recycleRoot);
+            var measuredFreed = beforeFree.HasValue && afterFree.HasValue
+                ? Math.Max(0, afterFree.Value - beforeFree.Value)
+                : 0;
+            var message = measuredFreed > 0
+                ? $"已清空 {recycleRoot} 回收站，并检测到实际释放 {measuredFreed} 字节。"
+                : $"已清空 {recycleRoot} 回收站；Windows 未立即报告可测的可用空间变化。";
+            return new CleanupItemResult(candidate.Path, CleanupItemStatus.Deleted, measuredFreed, message);
         }
 
         if (classification.CleanupKind != CleanupKind.File)
@@ -378,5 +409,11 @@ public sealed class CleanupExecutor
         {
             return new CleanupItemResult(candidate.Path, CleanupItemStatus.Failed, 0, ex.Message);
         }
+    }
+
+    private static long? TryGetAvailableFreeSpace(string rootPath)
+    {
+        try { return new DriveInfo(rootPath).AvailableFreeSpace; }
+        catch { return null; }
     }
 }
