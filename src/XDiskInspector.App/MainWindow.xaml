@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:XDiskInspector.App"
         Title="X C盘巡检官" Width="1360" Height="860" MinWidth="1100" MinHeight="700" WindowStartupLocation="CenterScreen">
-  <Grid>
+  <Grid Background="{StaticResource BgBrush}">
     <Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <Border Background="#12181C" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0" Padding="16">
       <DockPanel>
