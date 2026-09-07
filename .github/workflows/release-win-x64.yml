@@ -94,8 +94,8 @@ jobs:
           $notes = @"
           ## X C盘巡检官 $($env:RELEASE_TAG)
 
-          - Target ref: `$($env:TARGET_REF)`
-          - Source commit: `$commit`
+          - Target ref: $($env:TARGET_REF)
+          - Source commit: $commit
           - Platform: Windows x64
           - Runtime: .NET 10 self-contained
           - Package: single-file EXE + ZIP + SHA256
@@ -104,13 +104,13 @@ jobs:
 
           ### Verification
 
-          This Release is created only after `scripts/verify-win.ps1` succeeds against the same checked-out source.
+          This Release is created only after scripts/verify-win.ps1 succeeds against the same checked-out source.
 
           ### SHA256
 
-          `$exeHash  $exeName`
+          $exeHash  $exeName
 
-          `$zipHash  $zipName`
+          $zipHash  $zipName
           "@
 
           $notesPath = Join-Path $out 'release-notes.md'
