@@ -1,7 +1,7 @@
 {
-  "tag": "v1.0.0-pr2-f510b05-hotfix1",
-  "target_ref": "b22e0c394ef6b782953470c238ad22fe493211d2",
+  "tag": "v1.0.0-pr2-f510b05-hotfix2",
+  "target_ref": "2d9bd8c2da869573ece5843d7939bb49b93da42e",
   "prerelease": true,
   "attempt": 1,
-  "reason": "Publish the f510b05 feature line after fixing the missing System.IO import caught by self-hosted Windows verification."
+  "reason": "Publish f510b05 feature line after fixing the TwoWay binding startup crash caught by real-machine GUI acceptance (PR #10)."
 }
