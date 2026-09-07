@@ -55,6 +55,20 @@ public sealed class ProductContractTests
         Assert.All(required, id => Assert.Contains(id, ids));
     }
 
+    [Fact]
+    public void Cleanup_candidates_explain_recovery_semantics_in_plain_language()
+    {
+        var file = new CleanupCandidate(
+            @"C:\Temp\old.tmp", "fixture.file", "rules", 10, DateTime.UtcNow,
+            CleanupKind.File, null, RiskLevel.Low, "cache is recreated", false);
+        var recycle = new CleanupCandidate(
+            @"C:\$Recycle.Bin", "fixture.recycle", "rules", 20, null,
+            CleanupKind.RecycleBin, null, RiskLevel.Medium, "deleted files are permanently removed", true);
+
+        Assert.Contains("文件本身不可恢复", file.RecoveryText);
+        Assert.Contains("无法再从回收站恢复", recycle.RecoveryText);
+    }
+
     private static ScanItem Item(string path, bool selectable, string? ruleId, CleanupRecommendation recommendation, RiskLevel risk)
         => new()
         {
