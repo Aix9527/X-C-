@@ -34,6 +34,7 @@ public sealed class JsonReportWriter
         await using var stream = File.OpenRead(sourcePath);
         var envelope = await JsonSerializer.DeserializeAsync<ReportEnvelope>(stream, CreateOptions(), cancellationToken)
             ?? throw new InvalidDataException("报告文件为空或格式无效。");
+        ScanReportRuntimeState.MarkPersisted(envelope.Report);
         return envelope.Report;
     }
 }
