@@ -127,7 +127,7 @@ public sealed class FileSystemScanner
                     cancellationToken.ThrowIfCancellationRequested();
                     string entry;
                     try { if (!en.MoveNext()) break; entry = en.Current; }
-                    catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) { issues.Add(new AccessIssue(dir, ex.Message)); break; }
+                    catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException) { issues.Add(new AccessIssue(dir, ex.Message)); break; }
                     FileAttributes attrs;
                     try { attrs = File.GetAttributes(entry); }
                     catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException) { issues.Add(new AccessIssue(entry, ex.Message)); continue; }
