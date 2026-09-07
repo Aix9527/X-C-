@@ -7,7 +7,7 @@ namespace XDiskInspector.Tests;
 public sealed class CleanupProgressAndElevationTests
 {
     [Fact]
-    public async Task Executor_reports_item_progress_for_confirmed_batch()
+    public async Task Responsive_executor_reports_item_progress_for_confirmed_batch()
     {
         using var fixture = new TempDirectory();
         var cacheRoot = Directory.CreateDirectory(Path.Combine(fixture.Root, "Cache"));
@@ -19,29 +19,33 @@ public sealed class CleanupProgressAndElevationTests
         preview.Candidates.Add(CreateCandidate(matcher, second));
 
         var progress = new List<CleanupProgress>();
-        var executor = new CleanupExecutor(
-            matcher,
-            new SafePathPolicy(),
-            fileDeleteBackend: new BackgroundFileDeleteBackend());
+        var responsive = new ResponsiveCleanupExecutor(
+            new CleanupExecutor(matcher, new SafePathPolicy()));
 
-        var result = await executor.ExecuteAsync(
+        var result = await responsive.ExecuteAsync(
             preview,
             new CleanupExecutionOptions(),
             progress: new Progress<CleanupProgress>(p => progress.Add(p)));
 
-        Assert.Equal(2, result.DeletedCount);
+        Assert.Equal(2, result.RunResult.DeletedCount);
+        Assert.Empty(result.RequiresElevation);
         Assert.Contains(progress, p => p.CurrentIndex == 1 && p.TotalCount == 2 && p.CurrentPath == first && p.IsCurrentItemActive);
         Assert.Contains(progress, p => p.CompletedCount == 1 && p.EstimatedCompletedBytes >= 32);
         Assert.Contains(progress, p => p.CompletedCount == 2 && p.EstimatedCompletedBytes >= 96);
     }
 
     [Fact]
-    public async Task Background_delete_backend_returns_without_blocking_calling_thread()
+    public async Task Responsive_executor_does_not_block_caller_when_inner_executor_blocks()
     {
         using var gate = new ManualResetEventSlim(false);
-        var backend = new BackgroundFileDeleteBackend(_ => gate.Wait(TimeSpan.FromSeconds(5)));
+        var inner = new BlockingBatchExecutor(gate);
+        var responsive = new ResponsiveCleanupExecutor(inner);
+        var preview = new CleanupPreview { RuleVersion = "fixture" };
+        preview.Candidates.Add(new CleanupCandidate(
+            @"C:\fixture\large.bin", "fixture", "fixture", 10L * 1024 * 1024 * 1024,
+            DateTime.UtcNow.AddDays(-30), CleanupKind.File, null, RiskLevel.Low, "fixture", false));
 
-        var task = backend.DeleteAsync(@"C:\fixture\large.bin", CancellationToken.None);
+        var task = responsive.ExecuteAsync(preview, new CleanupExecutionOptions());
 
         Assert.False(task.IsCompleted);
         gate.Set();
@@ -49,25 +53,21 @@ public sealed class CleanupProgressAndElevationTests
     }
 
     [Fact]
-    public async Task Unauthorized_delete_is_reported_as_requires_elevation()
+    public async Task Permission_failure_is_collected_for_elevated_retry()
     {
-        using var fixture = new TempDirectory();
-        var cacheRoot = Directory.CreateDirectory(Path.Combine(fixture.Root, "Cache"));
-        var file = CreateFile(cacheRoot.FullName, "protected.tmp", 16);
-        var matcher = CreateMatcher(cacheRoot.FullName);
-        var preview = new CleanupPreview { RuleVersion = matcher.RuleVersion };
-        preview.Candidates.Add(CreateCandidate(matcher, file));
+        var inner = new PermissionDeniedBatchExecutor();
+        var responsive = new ResponsiveCleanupExecutor(inner);
+        var candidate = new CleanupCandidate(
+            @"C:\fixture\protected.tmp", "fixture", "fixture", 16,
+            DateTime.UtcNow.AddDays(-30), CleanupKind.File, null, RiskLevel.Low, "fixture", false);
+        var preview = new CleanupPreview { RuleVersion = "fixture" };
+        preview.Candidates.Add(candidate);
 
-        var executor = new CleanupExecutor(
-            matcher,
-            new SafePathPolicy(),
-            fileDeleteBackend: new ThrowingDeleteBackend(new UnauthorizedAccessException("fixture denied")));
+        var result = await responsive.ExecuteAsync(preview, new CleanupExecutionOptions());
 
-        var result = await executor.ExecuteAsync(preview, new CleanupExecutionOptions());
-
-        var item = Assert.Single(result.Items);
-        Assert.Equal(CleanupItemStatus.RequiresElevation, item.Status);
-        Assert.True(File.Exists(file));
+        Assert.Single(result.RequiresElevation);
+        Assert.Equal(candidate.Path, result.RequiresElevation[0].Path);
+        Assert.Equal(CleanupItemStatus.Failed, Assert.Single(result.RunResult.Items).Status);
     }
 
     private static string CreateFile(string root, string name, int size)
@@ -113,10 +113,25 @@ public sealed class CleanupProgressAndElevationTests
         return new PathRuleMatcher(new RuleLibrary("cleanup-progress-tests", [rule]));
     }
 
-    private sealed class ThrowingDeleteBackend(Exception exception) : IFileDeleteBackend
+    private sealed class BlockingBatchExecutor(ManualResetEventSlim gate) : ICleanupBatchExecutor
     {
-        public Task DeleteAsync(string path, CancellationToken cancellationToken)
-            => Task.FromException(exception);
+        public Task<CleanupRunResult> ExecuteAsync(CleanupPreview preview, CleanupExecutionOptions options, CancellationToken cancellationToken)
+        {
+            gate.Wait(TimeSpan.FromSeconds(5));
+            return Task.FromResult(new CleanupRunResult
+            {
+                Items = [new CleanupItemResult(preview.Candidates[0].Path, CleanupItemStatus.Deleted, 0, "ok")]
+            });
+        }
+    }
+
+    private sealed class PermissionDeniedBatchExecutor : ICleanupBatchExecutor
+    {
+        public Task<CleanupRunResult> ExecuteAsync(CleanupPreview preview, CleanupExecutionOptions options, CancellationToken cancellationToken)
+            => Task.FromResult(new CleanupRunResult
+            {
+                Items = [new CleanupItemResult(preview.Candidates[0].Path, CleanupItemStatus.Failed, 0, "权限不足：fixture denied")]
+            });
     }
 
     private sealed class TempDirectory : IDisposable
