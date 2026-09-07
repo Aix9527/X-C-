@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -44,14 +45,17 @@ jobs:
 
       - name: Publish single-file win-x64
         shell: pwsh
-        run: ./scripts/publish-win-x64.ps1 -OutputDirectory "${{ github.workspace }}\\artifacts\\win-x64"
+        run: ./scripts/publish-win-x64.ps1 -OutputDirectory "${{ github.workspace }}\artifacts\win-x64"
 
       - name: Verify published EXE
         shell: pwsh
         run: |
-          $exe = @(Get-ChildItem "${{ github.workspace }}\\artifacts\\win-x64" -Recurse -Filter XDiskInspector.App.exe)
+          $exe = @(Get-ChildItem "${{ github.workspace }}\artifacts\win-x64" -Recurse -Filter XDiskInspector.App.exe -File)
           if ($exe.Count -ne 1) {
             throw "Expected exactly one XDiskInspector.App.exe, found $($exe.Count)."
+          }
+          if ($exe[0].Length -le 0) {
+            throw "Published XDiskInspector.App.exe is empty."
           }
           Write-Host "Verified: $($exe[0].FullName) ($($exe[0].Length) bytes)"
 

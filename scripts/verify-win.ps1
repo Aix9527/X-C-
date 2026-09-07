@@ -16,12 +16,20 @@ function Invoke-DotNetCommand {
 }
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-    throw '.NET SDK was not found. Install .NET 10 SDK before publishing.'
+    throw '.NET SDK was not found. Install .NET 10 SDK before verification.'
+}
+
+$sdks = @(& dotnet --list-sdks)
+if ($LASTEXITCODE -ne 0) {
+    throw "dotnet --list-sdks failed with exit code $LASTEXITCODE."
+}
+if (-not ($sdks | Where-Object { $_ -match '^10\.' })) {
+    throw "A .NET 10 SDK is required. Installed SDKs: $($sdks -join '; ')"
 }
 
 $repo = Split-Path -Parent $PSScriptRoot
 $out = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    Join-Path $repo 'artifacts\publish\win-x64'
+    Join-Path $repo 'artifacts\verify\win-x64'
 } else {
     [System.IO.Path]::GetFullPath($OutputDirectory)
 }
@@ -30,8 +38,13 @@ $solution = Join-Path $repo 'XDiskInspector.sln'
 $tests = Join-Path $repo 'tests\XDiskInspector.Tests\XDiskInspector.Tests.csproj'
 $app = Join-Path $repo 'src\XDiskInspector.App\XDiskInspector.App.csproj'
 
+Write-Host '=== X C盘巡检官 Windows verification ==='
+Write-Host "Repository: $repo"
+Write-Host "SDK: $($sdks -join '; ')"
+
 Invoke-DotNetCommand -Arguments @('restore', $solution)
 Invoke-DotNetCommand -Arguments @('test', $tests, '-c', 'Release', '--no-restore', '--logger', 'console;verbosity=normal')
+Invoke-DotNetCommand -Arguments @('build', $app, '-c', 'Release', '--no-restore')
 
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Path $out | Out-Null
@@ -49,10 +62,13 @@ Invoke-DotNetCommand -Arguments @(
 
 $exe = @(Get-ChildItem $out -Filter 'XDiskInspector.App.exe' -File)
 if ($exe.Count -ne 1) {
-    throw "Expected exactly one XDiskInspector.App.exe, found $($exe.Count)."
+    throw "Verification expected exactly one XDiskInspector.App.exe, found $($exe.Count)."
 }
 if ($exe[0].Length -le 0) {
-    throw 'Published XDiskInspector.App.exe is empty.'
+    throw 'Verification found an empty XDiskInspector.App.exe.'
 }
 
-Write-Host "Published: $($exe[0].FullName) ($($exe[0].Length) bytes)"
+Write-Host ''
+Write-Host 'VERIFICATION PASSED'
+Write-Host "EXE: $($exe[0].FullName)"
+Write-Host "Size: $($exe[0].Length) bytes"
