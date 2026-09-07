@@ -120,9 +120,12 @@ public sealed class TamperResistanceTests
     private sealed class CountingRecycleBinService : IRecycleBinService
     {
         public int CallCount { get; private set; }
-        public Task<(bool Success, string? Error)> EmptyAsync()
+        public string? LastRootPath { get; private set; }
+
+        public Task<(bool Success, string? Error)> EmptyAsync(string rootPath)
         {
             CallCount++;
+            LastRootPath = rootPath;
             return Task.FromResult<(bool, string?)>((true, null));
         }
     }
