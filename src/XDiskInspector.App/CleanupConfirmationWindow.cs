@@ -17,8 +17,8 @@ public sealed class CleanupConfirmationWindow : Window
     public CleanupConfirmationWindow(CleanupPreview preview)
     {
         Title = "最终清理确认";
-        Width = 760;
-        Height = 560;
+        Width = 860;
+        Height = 580;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ResizeMode = ResizeMode.CanResize;
         Background = (System.Windows.Media.Brush)Application.Current.Resources["BgBrush"];
@@ -48,7 +48,7 @@ public sealed class CleanupConfirmationWindow : Window
         grid.Columns.Add(new DataGridTextColumn { Header = "风险", Binding = new Binding(nameof(CleanupCandidate.RiskLevel)), Width = 72 });
         grid.Columns.Add(new DataGridTextColumn { Header = "预计大小", Binding = new Binding(nameof(CleanupCandidate.EstimatedSizeBytes)), Width = 100 });
         grid.Columns.Add(new DataGridTextColumn { Header = "删除后果", Binding = new Binding(nameof(CleanupCandidate.Consequence)), Width = 190 });
-        grid.Columns.Add(new DataGridCheckBoxColumn { Header = "不可恢复", Binding = new Binding(nameof(CleanupCandidate.Irreversible)), Width = 82, IsReadOnly = true });
+        grid.Columns.Add(new DataGridTextColumn { Header = "恢复说明", Binding = new Binding(nameof(CleanupCandidate.RecoveryText)), Width = 260 });
         Grid.SetRow(grid, 2); root.Children.Add(grid);
 
         _irreversibleCheck = new CheckBox
