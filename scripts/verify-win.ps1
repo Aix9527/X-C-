@@ -38,7 +38,7 @@ $solution = Join-Path $repo 'XDiskInspector.sln'
 $tests = Join-Path $repo 'tests\XDiskInspector.Tests\XDiskInspector.Tests.csproj'
 $app = Join-Path $repo 'src\XDiskInspector.App\XDiskInspector.App.csproj'
 
-Write-Host '=== X C鐩樺贰妫€瀹?Windows verification ==='
+Write-Host '=== X C盘巡检官 Windows verification ==='
 Write-Host "Repository: $repo"
 Write-Host "SDK: $($sdks -join '; ')"
 
@@ -112,4 +112,3 @@ Write-Host ''
 Write-Host 'VERIFICATION PASSED'
 Write-Host "EXE: $($exe[0].FullName)"
 Write-Host "Size: $($exe[0].Length) bytes"
-
