@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -29,6 +28,10 @@ public sealed class MainViewModel : ObservableObject
     private int _selectedPageIndex;
     private bool _isScanning;
     private bool _isCleanupRunning;
+    private bool _suspendSelectionSummary;
+    private int _selectedCount;
+    private long _selectedBytes;
+    private RiskLevel? _highestSelectedRisk;
     private string _scanStatus = "尚未扫描";
     private string _currentPath = "—";
     private string _fileCountText = "0";
@@ -72,17 +75,17 @@ public sealed class MainViewModel : ObservableObject
         ExportHtmlCommand = new AsyncRelayCommand(_ => ExportHtmlAsync(), _ => CurrentReport is not null);
         RunOptimizationActionCommand = new RelayCommand(RunOptimizationAction);
 
-        foreach (var advice in OptimizationAdvisor.CreateDefaultAdvice()) OptimizationItems.Add(advice);
+        OptimizationItems.ReplaceAll(OptimizationAdvisor.CreateDefaultAdvice());
         RefreshDriveMetrics();
     }
 
-    public ObservableCollection<DirectoryUsage> MainOccupancies { get; } = [];
-    public ObservableCollection<ScanItem> HighlightedItems { get; } = [];
-    public ObservableCollection<ScanItem> LargeFiles { get; } = [];
-    public ObservableCollection<ScanItem> CleanupItems { get; } = [];
-    public ObservableCollection<ScanItem> GuidanceItems { get; } = [];
-    public ObservableCollection<CleanupItemResult> CleanupResults { get; } = [];
-    public ObservableCollection<OptimizationAdvice> OptimizationItems { get; } = [];
+    public BulkObservableCollection<DirectoryUsage> MainOccupancies { get; } = [];
+    public BulkObservableCollection<ScanItem> HighlightedItems { get; } = [];
+    public BulkObservableCollection<ScanItem> LargeFiles { get; } = [];
+    public BulkObservableCollection<ScanItem> CleanupItems { get; } = [];
+    public BulkObservableCollection<ScanItem> GuidanceItems { get; } = [];
+    public BulkObservableCollection<CleanupItemResult> CleanupResults { get; } = [];
+    public BulkObservableCollection<OptimizationAdvice> OptimizationItems { get; } = [];
 
     public ICollectionView CandidateView { get; }
     public ICollectionView HighlightView { get; }
@@ -175,9 +178,9 @@ public sealed class MainViewModel : ObservableObject
     public string RecommendationFilter { get => _recommendationFilter; set { if (SetProperty(ref _recommendationFilter, value)) RefreshFilters(); } }
     public string SoftwareFilter { get => _softwareFilter; set { if (SetProperty(ref _softwareFilter, value ?? string.Empty)) RefreshFilters(); } }
 
-    public int SelectedCount => CleanupItems.Count(x => x.Selected);
-    public string SelectedBytesText => ByteFormatter.Format(CleanupItems.Where(x => x.Selected).Sum(x => x.SizeBytes));
-    public string HighestSelectedRiskText => SelectedCount == 0 ? "无" : CleanupItems.Where(x => x.Selected).Max(x => x.RiskLevel) switch
+    public int SelectedCount => _selectedCount;
+    public string SelectedBytesText => ByteFormatter.Format(_selectedBytes);
+    public string HighestSelectedRiskText => _highestSelectedRisk switch
     {
         RiskLevel.Low => "低", RiskLevel.Medium => "中", RiskLevel.High => "高", RiskLevel.Critical => "严重", _ => "无"
     };
@@ -196,7 +199,7 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             var progress = new Progress<ScanProgress>(p => { CurrentPath = p.CurrentPath; FileCountText = p.FileCount.ToString("N0"); ScannedSizeText = ByteFormatter.Format(p.LogicalBytes); ElapsedText = $"{p.Elapsed.TotalSeconds:0.0} 秒"; });
-            var report = await _scanner.ScanAsync(new ScanOptions { RootPath = @"C:\", LargeFileThresholdBytes = (long)(LargeFileThresholdMb * 1024 * 1024), MaxLargeFiles = 300, ProgressBatchSize = 300 }, progress, _scanCts.Token);
+            var report = await _scanner.ScanAsync(new ScanOptions { RootPath = @"C:\", LargeFileThresholdBytes = (long)(LargeFileThresholdMb * 1024 * 1024), MaxLargeFiles = 300, ProgressBatchSize = 1500 }, progress, _scanCts.Token);
             ApplyReport(report);
             ScanStatus = report.IsComplete ? "扫描完成" : "扫描已取消：报告不完整，批量清理已禁用";
             await TrySaveLastReportAsync(report);
@@ -227,24 +230,41 @@ public sealed class MainViewModel : ObservableObject
     {
         CurrentReport = report; _diskTotal = report.DiskTotalBytes; _diskUsed = report.DiskUsedBytes; _diskFree = report.DiskFreeBytes;
         Raise(nameof(DiskTotalText)); Raise(nameof(DiskUsedText)); Raise(nameof(DiskFreeText)); Raise(nameof(DiskUsedPercent)); Raise(nameof(DiskUsedPercentText)); Raise(nameof(AccessibleLogicalText)); Raise(nameof(ScanCompletenessText));
-        ClearReportCollections();
-        foreach (var item in report.MainOccupancies) MainOccupancies.Add(item);
-        foreach (var item in report.HighlightedItems) HighlightedItems.Add(item);
-        foreach (var item in report.LargeFiles) LargeFiles.Add(item);
-        foreach (var item in report.CleanupCandidates) { item.PropertyChanged += CleanupItemOnPropertyChanged; CleanupItems.Add(item); }
-        foreach (var item in report.HighlightedItems.Where(x => x.Recommendation == CleanupRecommendation.GuidanceOnly)) GuidanceItems.Add(item);
-        RefreshFilters(); RaiseSelectionSummary();
+
+        foreach (var item in CleanupItems) item.PropertyChanged -= CleanupItemOnPropertyChanged;
+        foreach (var item in report.CleanupCandidates) item.PropertyChanged += CleanupItemOnPropertyChanged;
+
+        MainOccupancies.ReplaceAll(report.MainOccupancies);
+        HighlightedItems.ReplaceAll(report.HighlightedItems);
+        LargeFiles.ReplaceAll(report.LargeFiles);
+        CleanupItems.ReplaceAll(report.CleanupCandidates);
+        GuidanceItems.ReplaceAll(report.HighlightedItems.Where(x => x.Recommendation == CleanupRecommendation.GuidanceOnly));
+        CleanupResults.ReplaceAll([]);
+        RaiseSelectionSummary();
     }
 
     private void ClearReportCollections()
     {
         foreach (var item in CleanupItems) item.PropertyChanged -= CleanupItemOnPropertyChanged;
-        MainOccupancies.Clear(); HighlightedItems.Clear(); LargeFiles.Clear(); CleanupItems.Clear(); GuidanceItems.Clear(); CleanupResults.Clear(); RaiseSelectionSummary();
+        MainOccupancies.ReplaceAll([]); HighlightedItems.ReplaceAll([]); LargeFiles.ReplaceAll([]); CleanupItems.ReplaceAll([]); GuidanceItems.ReplaceAll([]); CleanupResults.ReplaceAll([]);
+        RaiseSelectionSummary();
     }
 
-    private void CleanupItemOnPropertyChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName == nameof(ScanItem.Selected)) RaiseSelectionSummary(); }
-    private void SelectSuggested() { SelectionPolicy.SelectSuggested(CandidateView.Cast<ScanItem>()); RaiseSelectionSummary(); }
-    private void ClearSelection() { foreach (var item in CleanupItems) item.Selected = false; RaiseSelectionSummary(); }
+    private void CleanupItemOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ScanItem.Selected) && !_suspendSelectionSummary) RaiseSelectionSummary();
+    }
+
+    private void SelectSuggested() => MutateSelection(() => SelectionPolicy.SelectSuggested(CandidateView.Cast<ScanItem>()));
+    private void ClearSelection() => MutateSelection(() => { foreach (var item in CleanupItems) item.Selected = false; });
+
+    private void MutateSelection(Action action)
+    {
+        _suspendSelectionSummary = true;
+        try { action(); }
+        finally { _suspendSelectionSummary = false; }
+        RaiseSelectionSummary();
+    }
 
     private async Task ExecuteCleanupAsync()
     {
@@ -254,13 +274,19 @@ public sealed class MainViewModel : ObservableObject
         if (preview.Candidates.Count == 0) { MessageBox.Show("没有通过最终安全复核的已选项目。", "安全清理", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         var dialog = new CleanupConfirmationWindow(preview) { Owner = Application.Current.MainWindow };
         if (dialog.ShowDialog() != true || !dialog.Confirmed) return;
-        _cleanupCts?.Dispose(); _cleanupCts = new CancellationTokenSource(); IsCleanupRunning = true; CleanupResults.Clear();
+        _cleanupCts?.Dispose(); _cleanupCts = new CancellationTokenSource(); IsCleanupRunning = true; CleanupResults.ReplaceAll([]);
         try
         {
             var result = await _cleanupExecutor.ExecuteAsync(preview, new CleanupExecutionOptions(dialog.AllowRecycleBinIrreversible), _cleanupCts.Token);
-            foreach (var item in result.Items) CleanupResults.Add(item);
-            foreach (var deleted in result.Items.Where(x => x.Status == CleanupItemStatus.Deleted)) { var source = CleanupItems.FirstOrDefault(x => string.Equals(x.Path, deleted.Path, StringComparison.OrdinalIgnoreCase)); if (source is not null) source.Selected = false; }
-            RaiseSelectionSummary();
+            CleanupResults.ReplaceAll(result.Items);
+            MutateSelection(() =>
+            {
+                foreach (var deleted in result.Items.Where(x => x.Status == CleanupItemStatus.Deleted))
+                {
+                    var source = CleanupItems.FirstOrDefault(x => string.Equals(x.Path, deleted.Path, StringComparison.OrdinalIgnoreCase));
+                    if (source is not null) source.Selected = false;
+                }
+            });
             var restart = result.RestartRequiredCount > 0 ? $"\n需要重启：{result.RestartRequiredCount} 项。" : "\n需要重启：0 项。";
             var stopped = result.Stopped ? "\n用户已停止后续项目。" : string.Empty;
             MessageBox.Show($"清理完成：成功 {result.DeletedCount}，跳过 {result.SkippedCount}，失败 {result.FailedCount}。\n实际释放：{ByteFormatter.Format(result.ActualFreedBytes)}{restart}{stopped}", "安全清理结果", MessageBoxButton.OK, result.FailedCount > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
@@ -321,7 +347,25 @@ public sealed class MainViewModel : ObservableObject
         return true;
     }
     private void RefreshFilters() { CandidateView.Refresh(); HighlightView.Refresh(); LargeFileView.Refresh(); }
-    private void RaiseSelectionSummary() { Raise(nameof(SelectedCount)); Raise(nameof(SelectedBytesText)); Raise(nameof(HighestSelectedRiskText)); Raise(nameof(CanExecuteCleanup)); ExecuteCleanupCommand.RaiseCanExecuteChanged(); }
+
+    private void RaiseSelectionSummary()
+    {
+        var count = 0;
+        long bytes = 0;
+        RiskLevel? highest = null;
+        foreach (var item in CleanupItems)
+        {
+            if (!item.Selected) continue;
+            count++;
+            bytes += item.SizeBytes;
+            if (!highest.HasValue || item.RiskLevel > highest.Value) highest = item.RiskLevel;
+        }
+        _selectedCount = count;
+        _selectedBytes = bytes;
+        _highestSelectedRisk = highest;
+        Raise(nameof(SelectedCount)); Raise(nameof(SelectedBytesText)); Raise(nameof(HighestSelectedRiskText)); Raise(nameof(CanExecuteCleanup)); ExecuteCleanupCommand.RaiseCanExecuteChanged();
+    }
+
     private void RaiseCommandStates()
     {
         StartScanCommand.RaiseCanExecuteChanged(); CancelScanCommand.RaiseCanExecuteChanged(); LoadLastReportCommand.RaiseCanExecuteChanged(); SelectSuggestedCommand.RaiseCanExecuteChanged(); ClearSelectionCommand.RaiseCanExecuteChanged(); ExecuteCleanupCommand.RaiseCanExecuteChanged(); StopCleanupCommand.RaiseCanExecuteChanged(); ExportJsonCommand.RaiseCanExecuteChanged(); ExportHtmlCommand.RaiseCanExecuteChanged();
