@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Security.Principal;
 using System.Text.Json;
 using XDiskInspector.Cleanup;
