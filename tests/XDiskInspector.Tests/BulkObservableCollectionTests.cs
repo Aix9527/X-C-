@@ -12,9 +12,9 @@ public sealed class BulkObservableCollectionTests
         var events = new List<NotifyCollectionChangedEventArgs>();
         collection.CollectionChanged += (_, e) => events.Add(e);
 
-        collection.ReplaceAll([10, 20, 30, 40]);
+        collection.ReplaceAll(new[] { 10, 20, 30, 40 });
 
-        Assert.Equal([10, 20, 30, 40], collection);
+        Assert.Equal(new[] { 10, 20, 30, 40 }, collection);
         var change = Assert.Single(events);
         Assert.Equal(NotifyCollectionChangedAction.Reset, change.Action);
     }
@@ -26,7 +26,7 @@ public sealed class BulkObservableCollectionTests
         var events = new List<NotifyCollectionChangedEventArgs>();
         collection.CollectionChanged += (_, e) => events.Add(e);
 
-        collection.ReplaceAll([]);
+        collection.ReplaceAll(Array.Empty<string>());
 
         Assert.Empty(collection);
         var change = Assert.Single(events);
