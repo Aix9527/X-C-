@@ -43,10 +43,23 @@ public sealed class RuleLibrary
 
 public sealed class PathRuleMatcher : IPathClassifier
 {
-    private sealed record CompiledRule(DirectoryRule Rule, Regex Regex, string ExpandedPattern, string MatchedRoot);
+    private sealed record CompiledRule(DirectoryRule Rule, Regex Regex, string ExpandedPattern, string MatchedRoot, int DeclarationOrder)
+    {
+        public int LiteralSpecificity => ExpandedPattern.Count(c => c != '*');
+    }
+
     private readonly List<CompiledRule> _compiled;
     public string RuleVersion { get; }
-    public PathRuleMatcher(RuleLibrary library) { RuleVersion = library.Version; _compiled = library.Rules.Select(Compile).ToList(); }
+
+    public PathRuleMatcher(RuleLibrary library)
+    {
+        RuleVersion = library.Version;
+        _compiled = library.Rules
+            .Select((rule, index) => Compile(rule, index))
+            .OrderByDescending(x => x.LiteralSpecificity)
+            .ThenBy(x => x.DeclarationOrder)
+            .ToList();
+    }
 
     public PathClassification? Classify(string path)
     {
@@ -63,13 +76,18 @@ public sealed class PathRuleMatcher : IPathClassifier
 
     public DirectoryRule? GetRule(string ruleId) => _compiled.FirstOrDefault(x => string.Equals(x.Rule.Id, ruleId, StringComparison.Ordinal))?.Rule;
 
-    private static CompiledRule Compile(DirectoryRule rule)
+    private static CompiledRule Compile(DirectoryRule rule, int declarationOrder)
     {
         var expanded = Normalize(Environment.ExpandEnvironmentVariables(rule.PathPattern));
         var regexText = string.Join(@"[^\\]*", expanded.Split('*').Select(Regex.Escape));
         regexText = rule.AppliesToDescendants ? $"^{regexText}(?:\\\\.*)?$" : $"^{regexText}$";
         var matchedRoot = rule.AppliesToDescendants ? expanded[..(expanded.IndexOf('*') >= 0 ? expanded.IndexOf('*') : expanded.Length)].TrimEnd('\\') : expanded;
-        return new CompiledRule(rule, new Regex(regexText, RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), expanded, matchedRoot);
+        return new CompiledRule(
+            rule,
+            new Regex(regexText, RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+            expanded,
+            matchedRoot,
+            declarationOrder);
     }
 
     private static string Normalize(string path)
