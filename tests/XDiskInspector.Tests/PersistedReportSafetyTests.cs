@@ -8,7 +8,7 @@ namespace XDiskInspector.Tests;
 public sealed class PersistedReportSafetyTests
 {
     [Fact]
-    public async Task Json_round_trip_marks_report_as_persisted_and_preview_refuses_cleanup()
+    public async Task Json_round_trip_marks_report_as_persisted_clears_selection_and_preview_refuses_cleanup()
     {
         using var fixture = new TempDirectory();
         var cacheRoot = Directory.CreateDirectory(Path.Combine(fixture.Root, "Cache"));
@@ -43,11 +43,13 @@ public sealed class PersistedReportSafetyTests
             CleanupCandidates = [item]
         };
         Assert.False(ScanReportRuntimeState.IsPersisted(liveReport));
+        Assert.True(item.Selected);
 
         var reportPath = Path.Combine(fixture.Root, "report.json");
         var writer = new JsonReportWriter();
         await writer.WriteAsync(liveReport, reportPath);
         Assert.False(ScanReportRuntimeState.IsPersisted(liveReport));
+        Assert.True(item.Selected);
 
         var json = await File.ReadAllTextAsync(reportPath);
         Assert.DoesNotContain("\"isPersisted\"", json, StringComparison.OrdinalIgnoreCase);
@@ -57,6 +59,7 @@ public sealed class PersistedReportSafetyTests
         Assert.True(loaded.IsComplete);
         Assert.Equal(matcher.RuleVersion, loaded.RuleVersion);
         Assert.True(ScanReportRuntimeState.IsPersisted(loaded));
+        Assert.All(loaded.CleanupCandidates, candidate => Assert.False(candidate.Selected));
 
         var preview = new CleanupPreviewService(matcher, new SafePathPolicy())
             .Build(loaded, loaded.CleanupCandidates);
