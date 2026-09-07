@@ -25,7 +25,7 @@ public sealed class CleanupProgressAndElevationTests
         var result = await responsive.ExecuteAsync(
             preview,
             new CleanupExecutionOptions(),
-            progress: new Progress<CleanupProgress>(p => progress.Add(p)));
+            progress: new InlineProgress<CleanupProgress>(p => progress.Add(p)));
 
         Assert.Equal(2, result.RunResult.DeletedCount);
         Assert.Empty(result.RequiresElevation);
@@ -132,6 +132,11 @@ public sealed class CleanupProgressAndElevationTests
             {
                 Items = [new CleanupItemResult(preview.Candidates[0].Path, CleanupItemStatus.Failed, 0, "权限不足：fixture denied")]
             });
+    }
+
+    private sealed class InlineProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
     }
 
     private sealed class TempDirectory : IDisposable
