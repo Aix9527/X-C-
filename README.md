@@ -31,13 +31,29 @@ dotnet test .\tests\XDiskInspector.Tests\XDiskInspector.Tests.csproj -c Release
 dotnet build .\src\XDiskInspector.App\XDiskInspector.App.csproj -c Release
 ```
 
+## 一键完整验收
+
+在 Windows PowerShell 中执行：
+
+```powershell
+.\scripts\verify-win.ps1
+```
+
+脚本会依次检查 .NET 10 SDK、restore、xUnit 测试、WPF Release build、`win-x64` self-contained single-file publish，并确认最终 `XDiskInspector.App.exe` 存在且非空。任一原生命令返回非 0 退出码都会立即失败。
+
+默认验收产物目录：`artifacts\verify\win-x64\`。
+
 ## 发布单文件 EXE
 
 ```powershell
 .\scripts\publish-win-x64.ps1
 ```
 
-输出目录：`artifacts\publish\win-x64\`。发布配置为 `win-x64`、self-contained、single-file。
+输出目录：`artifacts\publish\win-x64\`。发布配置为 `win-x64`、self-contained、single-file。发布脚本同样会检查所有 `dotnet` 命令退出码，并在 EXE 缺失或为空时失败。
+
+## GitHub Actions
+
+`.github/workflows/windows-ci.yml` 会执行 restore → tests → WPF Release build → single-file publish → EXE 校验 → artifact upload。除 push / pull request 外也支持在 Actions 页面使用 `workflow_dispatch` 手工运行。
 
 ## 规则库
 
