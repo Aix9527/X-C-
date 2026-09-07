@@ -7,8 +7,8 @@ public sealed class BunRuleSafetyTests
     [Fact]
     public void Bun_package_cache_is_allowed_but_bin_and_other_root_content_are_kept()
     {
-        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (string.IsNullOrWhiteSpace(profile)) return;
+        var profile = Environment.ExpandEnvironmentVariables("%USERPROFILE%");
+        if (string.IsNullOrWhiteSpace(profile) || profile == "%USERPROFILE%") return;
 
         var matcher = new PathRuleMatcher(RuleLibrary.LoadDefault());
 

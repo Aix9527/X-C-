@@ -53,7 +53,7 @@ public sealed class RecycleBinScopeTests
 
         Assert.Equal(CleanupItemStatus.Deleted, Assert.Single(result.Items).Status);
         Assert.Equal(1, fake.CallCount);
-        Assert.True(string.Equals(Path.GetPathRoot(fixture.Root), fake.LastRootPath, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(Path.GetPathRoot(fixture.Root), fake.LastRootPath, ignoreCase: true);
     }
 
     private static PathRuleMatcher CreateRecycleMatcher(string root)

@@ -30,7 +30,7 @@ public sealed class SafetyAndBehaviorTests
         Assert.Equal("windows.local-temp", matcher.Classify(temp)?.RuleId);
         Assert.Equal("wsl.ext4-vhdx", matcher.Classify(wsl)?.RuleId);
         Assert.Equal("windows.winsxs", matcher.Classify(@"C:\Windows\WinSxS\amd64_test")?.RuleId);
-        Assert.Null(matcher.Classify(Path.Combine(Path.GetTempPath(), "totally-unknown-xdisk", "data.bin")));
+        Assert.Null(matcher.Classify(@"C:\totally-unknown-xdisk\data.bin"));
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public sealed class SafetyAndBehaviorTests
 
         Assert.True(preview.IsExecutable);
         Assert.Single(preview.Candidates);
-        Assert.True(string.Equals(parent.FullName, preview.Candidates[0].Path, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(parent.FullName, preview.Candidates[0].Path, ignoreCase: true);
         Assert.Equal("unchanged", File.ReadAllText(child));
     }
 
@@ -233,7 +233,7 @@ public sealed class SafetyAndBehaviorTests
         Assert.True(result.Stopped);
         Assert.Single(result.Items);
         Assert.Equal(1, recycle.CallCount);
-        Assert.True(string.Equals(Path.GetPathRoot(root.FullName), recycle.LastRootPath, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(Path.GetPathRoot(root.FullName), recycle.LastRootPath, ignoreCase: true);
     }
 
     [Fact]
