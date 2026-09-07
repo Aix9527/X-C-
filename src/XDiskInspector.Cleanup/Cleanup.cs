@@ -139,7 +139,15 @@ public sealed record CleanupCandidate(
     int? MinAgeDays,
     RiskLevel RiskLevel,
     string Consequence,
-    bool Irreversible);
+    bool Irreversible)
+{
+    public string RecoveryText => CleanupKind switch
+    {
+        CleanupKind.File => "直接删除：文件本身不可恢复；缓存是否可重建见删除后果",
+        CleanupKind.RecycleBin => "清空后无法再从回收站恢复",
+        _ => "不执行自动删除"
+    };
+}
 
 public sealed class CleanupPreview
 {
