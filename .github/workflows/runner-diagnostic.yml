@@ -1,0 +1,20 @@
+name: Hosted Runner Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/xdiskinspector-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Runner acquired
+        run: |
+          echo "hosted-runner-ok"
+          uname -a
