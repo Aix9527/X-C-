@@ -1,7 +1,7 @@
 {
-  "tag": "v1.0.0-pr2-e5c01c",
-  "target_ref": "e5c01cac9e28030487cc6f67aa282f3ea821f05b",
+  "tag": "v1.0.0-pr2-bd248d7",
+  "target_ref": "bd248d71cac422867999904fc75ba53d27a66ffb",
   "prerelease": true,
   "attempt": 1,
-  "reason": "Backfill the first PR #2 performance/contrast Windows-verified milestone."
+  "reason": "Backfill the second PR #2 dark UI/virtualization Windows-verified milestone."
 }
