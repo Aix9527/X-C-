@@ -1,10 +1,13 @@
 name: Release Windows x64
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, e.g. v1.0.0"
+        description: "Release tag, e.g. v1.0.0 or v1.0.0-pr2-2f39853"
         required: true
         type: string
       target_ref:
@@ -26,12 +29,16 @@ jobs:
     name: Verify, build and publish Release
     runs-on: windows-latest
     timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      TARGET_REF: ${{ github.event_name == 'push' && github.ref || inputs.target_ref }}
+      PRERELEASE: ${{ github.event_name == 'push' && contains(github.ref_name, '-') || inputs.prerelease }}
 
     steps:
       - name: Checkout target
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.target_ref }}
+          ref: ${{ env.TARGET_REF }}
           fetch-depth: 0
 
       - name: Setup .NET 10
@@ -48,11 +55,12 @@ jobs:
       - name: Package release assets
         id: package
         shell: pwsh
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           $ErrorActionPreference = 'Stop'
           Set-StrictMode -Version Latest
+
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TAG)) { throw 'RELEASE_TAG is empty.' }
+          if ([string]::IsNullOrWhiteSpace($env:TARGET_REF)) { throw 'TARGET_REF is empty.' }
 
           $publish = Join-Path $env:GITHUB_WORKSPACE 'artifacts\release\publish'
           $out = Join-Path $env:GITHUB_WORKSPACE 'artifacts\release\assets'
@@ -70,7 +78,6 @@ jobs:
           $zipPath = Join-Path $out $zipName
           $shaPath = Join-Path $out $shaName
           Copy-Item $sourceExe $exePath -Force
-
           Compress-Archive -Path $exePath -DestinationPath $zipPath -CompressionLevel Optimal -Force
 
           $exeHash = (Get-FileHash -Algorithm SHA256 $exePath).Hash
@@ -87,7 +94,7 @@ jobs:
           $notes = @"
           ## X C盘巡检官 $($env:RELEASE_TAG)
 
-          - Target ref: `${{ inputs.target_ref }}`
+          - Target ref: `$($env:TARGET_REF)`
           - Source commit: `$commit`
           - Platform: Windows x64
           - Runtime: .NET 10 self-contained
@@ -97,7 +104,7 @@ jobs:
 
           ### Verification
 
-          Release creation only runs after `scripts/verify-win.ps1` succeeds on the same checked-out source.
+          This Release is created only after `scripts/verify-win.ps1` succeeds against the same checked-out source.
 
           ### SHA256
 
@@ -105,12 +112,15 @@ jobs:
 
           `$zipHash  $zipName`
           "@
+
           $notesPath = Join-Path $out 'release-notes.md'
           $notes | Set-Content -Path $notesPath -Encoding utf8
 
           "asset_dir=$out" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "notes_path=$notesPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
+          Write-Host "Release tag: $env:RELEASE_TAG"
+          Write-Host "Target ref: $env:TARGET_REF"
           Write-Host "Source commit: $commit"
           Write-Host "EXE: $exeName ($exeSize bytes)"
           Write-Host "EXE SHA256: $exeHash"
@@ -121,9 +131,6 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
-          TARGET_REF: ${{ inputs.target_ref }}
-          PRERELEASE: ${{ inputs.prerelease }}
           ASSET_DIR: ${{ steps.package.outputs.asset_dir }}
           NOTES_PATH: ${{ steps.package.outputs.notes_path }}
         run: |
@@ -165,7 +172,7 @@ jobs:
       - name: Upload workflow artifact copy
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ inputs.tag }}-win-x64
+          name: release-${{ env.RELEASE_TAG }}-win-x64
           path: artifacts/release/assets/*
           if-no-files-found: error
           retention-days: 30
