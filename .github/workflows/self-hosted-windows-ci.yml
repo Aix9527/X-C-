@@ -1,0 +1,44 @@
+name: Self-hosted Windows CI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-windows-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Verify runner and SDK
+        shell: pwsh
+        run: |
+          Write-Host "Runner OS: $env:RUNNER_OS"
+          Write-Host "Runner arch: $env:RUNNER_ARCH"
+          dotnet --info
+          if ($LASTEXITCODE -ne 0) { throw "dotnet --info failed with exit code $LASTEXITCODE" }
+
+      - name: Test, build and publish
+        shell: pwsh
+        run: ./scripts/verify-win.ps1 -OutputDirectory "${{ github.workspace }}\artifacts\self-hosted-win-x64"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: X-C盘巡检官-self-hosted-win-x64
+          path: artifacts/self-hosted-win-x64/
+          if-no-files-found: error
+          retention-days: 14
